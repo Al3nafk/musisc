@@ -512,16 +512,20 @@ async function handleImage(file){
 async function handleText(t){
   t=t.trim(); if(!t) return;
   if(isAbc(t)){ try{ loadAbc(t); saveSong(t); showView('score'); setStatus(''); }catch(e){ $('#abcText').value=t; showView('text'); setStatus(e.message,'err'); } return; }
+  if(/<score-partwise/.test(t)){ try{ const abc=musicXmlToAbc(t); loadAbc(abc); saveSong(abc); showView('score'); setStatus('Opened your MusicXML on this device, no internet needed.'); return; }catch(e){ if(!sampleFn){ setStatus(esc(e.message),'err'); return; } } }
   const kind=/<score-partwise|<\?xml|<score-timewise/.test(t)?'MusicXML':'text';
   const text=await askClaude(`Convert this ${kind} music into valid ABC notation 2.1 that abcjs can render and play. Use headers X:, T:, M:, L:, Q:, K:. For two staves use %%score {1 2} with V:1 clef=treble and V:2 clef=bass. If it is not music, reply exactly NOT_SHEET_MUSIC. Reply with only the ABC inside one \`\`\`abc code block.\n\n${t.slice(0,120000)}`,{},'Converting your music…');
   finishAbc(text);
 }
 async function handleFile(f){
   if(!f) return;
+  if(/\.mxl$/i.test(f.name)) return importLocal(async()=>musicXmlToAbc(await unzipMusicXml(await f.arrayBuffer())), f.name);
+  if(/\.(mid|midi|kar)$/i.test(f.name)||/midi|mid$/.test(f.type)) return importLocal(async()=>midiToAbc(await f.arrayBuffer(), f.name), f.name);
+  if(/\.(musicxml|xml)$/i.test(f.name)) return importLocal(async()=>musicXmlToAbc(await f.text()), f.name);
   if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)) return handlePdf(f);
   if(f.type.startsWith('image/')) return handleImage(f);
   if(/\.(abc|txt|xml|musicxml)$/i.test(f.name)||f.type.startsWith('text/')) return handleText(await f.text());
-  setStatus('That file type is not supported. Use a photo or screenshot of the sheet, or an .abc / MusicXML file.','err');
+  setStatus('That file type is not supported. Use a photo, screenshot or PDF of the sheet, or a MusicXML (.musicxml, .mxl), MIDI (.mid) or ABC (.abc) file.','err');
 }
 $('#fileIn').onchange=e=>{ handleFile(e.target.files[0]); e.target.value=''; };
 $('#camIn').onchange=e=>{ handleFile(e.target.files[0]); e.target.value=''; };
@@ -611,10 +615,10 @@ let memSongs=null; // fallback when browser storage is unavailable
 function getSongs(){ try{ return JSON.parse(localStorage.getItem('smc.songs')||'[]'); }catch(e){ return memSongs||[]; } }
 function putSongs(list){ memSongs=list; try{ localStorage.setItem('smc.songs',JSON.stringify(list)); }catch(e){} }
 function songs(){ const l=getSongs(); return l.length?l:(memSongs||[]); }
-function saveSong(abc){
+function saveSong(abc, replaceCurrent=false){
   const title=(vis&&vis.metaText&&vis.metaText.title)||'Untitled';
   const list=songs();
-  let s=list.find(x=>x.abc===abc) || ((currentSong||'').startsWith('m:')&&list.find(x=>'m:'+x.id===currentSong));
+  let s=list.find(x=>x.abc===abc) || (replaceCurrent&&(currentSong||'').startsWith('m:')&&list.find(x=>'m:'+x.id===currentSong));
   if(s){ s.abc=abc; s.title=title; }
   else { s={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,abc,added:new Date().toISOString().slice(0,10)}; list.unshift(s); }
   putSongs(list); currentSong='m:'+s.id; fillSongs();
@@ -643,7 +647,7 @@ $('#songSel').onchange=e=>{
   }catch(err){ setStatus(esc(err.message),'err'); }
 };
 $('#applyBtn').onclick=()=>{
-  try{ const t=$('#abcText').value; loadAbc(t); if(!(currentSong||'').startsWith('s:')) saveSong(t); $('#applyMsg').textContent='Updated.'; showView('score'); }
+  try{ const t=$('#abcText').value; loadAbc(t); if(!(currentSong||'').startsWith('s:')) saveSong(t, true); $('#applyMsg').textContent='Updated.'; showView('score'); }
   catch(e){ $('#applyMsg').textContent=e.message+' Check the notation for typos.'; }
 };
 
@@ -683,6 +687,280 @@ async function handlePdf(file){
   }catch(e){ setStatus('That PDF could not be opened. If it is password-protected, remove the password or take a screenshot of the page instead.','err'); }
 }
 
+/* ---------- offline import: MusicXML (.musicxml/.xml/.mxl) and MIDI ---------- */
+// Both are turned into ABC notation on this device, so the rest of the app works unchanged.
+const SHARP_ORDER='FCGDAEB', FLAT_ORDER='BEADGCF';
+function keyAlters(f){ const m={C:0,D:0,E:0,F:0,G:0,A:0,B:0}; if(f>0) for(let i=0;i<f;i++) m[SHARP_ORDER[i]]=1; else for(let i=0;i<-f;i++) m[FLAT_ORDER[i]]=-1; return m; }
+const KEY_MAJ={'-7':'Cb','-6':'Gb','-5':'Db','-4':'Ab','-3':'Eb','-2':'Bb','-1':'F','0':'C','1':'G','2':'D','3':'A','4':'E','5':'B','6':'F#','7':'C#'};
+const KEY_MIN={'-7':'Abm','-6':'Ebm','-5':'Bbm','-4':'Fm','-3':'Cm','-2':'Gm','-1':'Dm','0':'Am','1':'Em','2':'Bm','3':'F#m','4':'C#m','5':'G#m','6':'D#m','7':'A#m'};
+function abcKey(f,mode){ f=Math.max(-7,Math.min(7,Math.round(f)||0)); return (mode==='minor'?KEY_MIN:KEY_MAJ)[f]; }
+function abcPitch(n,bar,keyMap){
+  const id=n.step+n.oct, expect=(id in bar)?bar[id]:keyMap[n.step];
+  let acc='';
+  if(n.alter!==expect){ acc={'-2':'__','-1':'_','0':'=','1':'^','2':'^^'}[n.alter]||''; bar[id]=n.alter; }
+  return acc+(n.oct>=5 ? n.step.toLowerCase()+"'".repeat(n.oct-5) : n.step+",".repeat(Math.max(0,4-n.oct)));
+}
+function gcdN(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b]; } return a; }
+function lcmN(a,b){ return a/gcdN(a,b)*b; }
+const cleanTitle=s=>String(s||'').replace(/[\r\n]+/g,' ').trim();
+
+// Render voices -> ABC. voices: [{id, name, clef, bars:[[token...]]}], token: {kind:'note'|'rest'|'space'|'raw', notes, len, tie, pre}
+function renderAbc({title,composer,meter,unitDen,tempo,key,score,voices,barCount,barMeta}){
+  let g=0;
+  voices.forEach(v=>v.bars.forEach(b=>b&&b.forEach(t=>{ if(t.len) g=gcdN(g,t.len); })));
+  g=gcdN(g||1,unitDen);
+  const L=unitDen/g; // lengths are in 1/unitDen of a whole note
+  const head=['X:1','T:'+(cleanTitle(title)||'Untitled')];
+  if(composer) head.push('C:'+cleanTitle(composer));
+  head.push('M:'+meter, (Number.isInteger(L)?'L:1/'+L:'L:1/'+unitDen), 'Q:1/4='+Math.round(tempo||100));
+  if(voices.length>1) head.push('%%score '+score);
+  voices.forEach(v=>head.push(`V:${v.id} clef=${v.clef}${v.name?` name="${v.name.replace(/"/g,'')}"`:''}`));
+  head.push('K:'+key);
+  const div=Number.isInteger(L)?g:1;
+  const out=[...head];
+  for(let start=0;start<barCount;start+=4){
+    voices.forEach(v=>{
+      let line=voices.length>1?`[V:${v.id}] `:'';
+      for(let b=start;b<Math.min(barCount,start+4);b++){
+        const meta=barMeta[b]||{}; let s='';
+        if(b>0&&meta.key) s+=`[K:${meta.key}] `;
+        if(b>0&&meta.meter) s+=`[M:${meta.meter}] `;
+        s+=(v.bars[b]||[]).map(t=>{
+          if(t.kind==='raw') return t.text;
+          const n=t.len/div, len=n===1?'':String(n);
+          return (t.pre||'')+t.body+len+(t.tie?'-':'');
+        }).join(' ');
+        line+=s+(b===barCount-1?' |]':' | ');
+      }
+      out.push(line.trim());
+    });
+  }
+  return out.join('\n');
+}
+
+/* MusicXML */
+function musicXmlToAbc(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'application/xml');
+  if(doc.querySelector('parsererror')) throw new Error('This MusicXML file could not be read. It may be damaged.');
+  const root=doc.documentElement;
+  if(root.nodeName==='score-timewise') throw new Error('This MusicXML uses the "timewise" layout. Export it again as standard MusicXML.');
+  if(root.nodeName!=='score-partwise') throw new Error('This is not a MusicXML score.');
+  const kids=(el,name)=>[...el.children].filter(c=>c.nodeName===name);
+  const kid=(el,name)=>[...el.children].find(c=>c.nodeName===name);
+  const txt=(el,sel)=>{ const e=el&&el.querySelector(sel); return e?e.textContent.trim():''; };
+  const title=txt(root,'work > work-title')||txt(root,'movement-title')||txt(root,'credit-words')||'Untitled';
+  const composer=txt(root,'identification > creator[type="composer"]');
+  const partNames={}; root.querySelectorAll('part-list > score-part').forEach(sp=>partNames[sp.getAttribute('id')]=txt(sp,'part-name'));
+  const parts=kids(root,'part').slice(0,4);
+  if(!parts.length) throw new Error('This MusicXML file has no music in it.');
+  // common tick unit for all parts
+  let TPQ=1; root.querySelectorAll('divisions').forEach(d=>{ const v=parseInt(d.textContent,10); if(v>0&&v<100000) TPQ=lcmN(TPQ,v); });
+  if(TPQ>100000) TPQ=100000;
+  let tempo=null, firstKey=null, firstMeter=null;
+  const barMeta=[], barLen=[], voiceMap=new Map(), order=[];
+  parts.forEach((part,pi)=>{
+    let scale=TPQ, beats=4, beatType=4; const clefs={};
+    kids(part,'measure').forEach((m,mi)=>{
+      let cursor=0, maxC=0; const last={};
+      for(const el of m.children){
+        if(el.nodeName==='attributes'){
+          const dv=txt(el,'divisions'); if(dv) scale=TPQ/parseInt(dv,10);
+          const k=kid(el,'key'); if(k){ const f=parseInt(txt(k,'fifths')||'0',10), md=txt(k,'mode')||'major', ks=abcKey(f,md);
+            if(pi===0){ if(!firstKey) firstKey={f,ks}; else if(mi>0){ (barMeta[mi]=barMeta[mi]||{}).key=ks; (barMeta[mi]).fifths=f; } } }
+          const t=kid(el,'time'); if(t){ beats=parseInt(txt(t,'beats'),10)||4; beatType=parseInt(txt(t,'beat-type'),10)||4;
+            if(pi===0){ if(!firstMeter) firstMeter=beats+'/'+beatType; else if(mi>0) (barMeta[mi]=barMeta[mi]||{}).meter=beats+'/'+beatType; } }
+          kids(el,'clef').forEach(c=>{ const s=txt(c,'sign'); clefs[c.getAttribute('number')||'1']= s==='F'?'bass':s==='C'?'alto':'treble'; });
+        } else if(el.nodeName==='direction'||el.nodeName==='sound'){
+          const snd=el.nodeName==='sound'?el:el.querySelector('sound');
+          if(tempo==null&&snd&&snd.getAttribute('tempo')) tempo=parseFloat(snd.getAttribute('tempo'));
+          if(tempo==null){ const pm=txt(el,'metronome per-minute'), bu=txt(el,'metronome beat-unit'); if(pm&&(!bu||bu==='quarter')) tempo=parseFloat(pm); }
+        } else if(el.nodeName==='backup'){ cursor-=Math.round(parseInt(txt(el,'duration')||'0',10)*scale); if(cursor<0) cursor=0; }
+        else if(el.nodeName==='forward'){ cursor+=Math.round(parseInt(txt(el,'duration')||'0',10)*scale); maxC=Math.max(maxC,cursor); }
+        else if(el.nodeName==='note'){
+          if(kid(el,'grace')||kid(el,'cue')) continue;
+          const dur=Math.round(parseInt(txt(el,'duration')||'0',10)*scale);
+          const staff=txt(el,'staff')||'1', voice=txt(el,'voice')||'1', key=pi+':'+staff+':'+voice;
+          if(!voiceMap.has(key)){ voiceMap.set(key,{key,pi,staff,voice,clef:clefs[staff]||'treble',bars:[],notes:0}); order.push(key); }
+          const v=voiceMap.get(key), evs=(v.bars[mi]=v.bars[mi]||[]);
+          const pe=kid(el,'pitch');
+          const pitch=pe?{step:txt(pe,'step'),alter:Math.round(parseFloat(txt(pe,'alter')||'0')),oct:parseInt(txt(pe,'octave'),10)}:null;
+          const tie=!!el.querySelector(':scope > tie[type="start"], notations > tied[type="start"]');
+          if(kid(el,'chord')&&last[key]&&pitch){ last[key].notes.push(pitch); if(tie) last[key].tie=true; continue; }
+          const tm=kid(el,'time-modification');
+          const ev={pos:cursor,dur,notes:pitch?[pitch]:[],tie,
+            tm:tm?[parseInt(txt(tm,'actual-notes'),10)||3,parseInt(txt(tm,'normal-notes'),10)||2]:null,
+            tStart:!!el.querySelector('notations > tuplet[type="start"]'),tStop:!!el.querySelector('notations > tuplet[type="stop"]')};
+          if(pitch) v.notes++;
+          evs.push(ev); last[key]=ev; cursor+=dur; maxC=Math.max(maxC,cursor);
+        }
+      }
+      const nominal=Math.round(beats*(4/beatType)*TPQ);
+      const len=m.getAttribute('implicit')==='yes'?maxC:Math.max(nominal,maxC);
+      barLen[mi]=Math.max(barLen[mi]||0,len);
+    });
+  });
+  // keep voices that have notes, plus one voice per staff that has none
+  const staffHas={}; order.forEach(k=>{ const v=voiceMap.get(k); const s=v.pi+':'+v.staff; if(v.notes) staffHas[s]=true; });
+  const seenStaff={};
+  const kept=order.map(k=>voiceMap.get(k)).filter(v=>{ const s=v.pi+':'+v.staff; if(v.notes) return true; if(staffHas[s]||seenStaff[s]) return false; seenStaff[s]=true; return true; })
+    .sort((a,b)=>a.pi-b.pi||a.staff-b.staff||a.voice-b.voice).slice(0,8);
+  if(!kept.some(v=>v.notes)) throw new Error('No notes were found in this MusicXML file.');
+  const barCount=barLen.length;
+  let fifths=firstKey?firstKey.f:0;
+  const keyAt=[]; for(let b=0;b<barCount;b++){ if(barMeta[b]&&barMeta[b].fifths!=null) fifths=barMeta[b].fifths; keyAt[b]=keyAlters(fifths); }
+  const voices=kept.map((v,i)=>{
+    const id=i+1, bars=[];
+    for(let b=0;b<barCount;b++){
+      const evs=(v.bars[b]||[]).slice().sort((x,y)=>x.pos-y.pos), toks=[], bar={}; let t=0;
+      for(let i2=0;i2<evs.length;i2++){
+        const ev=evs[i2];
+        if(ev.pos>t) toks.push({kind:'rest',body:'x',len:ev.pos-t});
+        let start=Math.max(ev.pos,t), dur=ev.dur-(start-ev.pos); if(dur<=0) continue;
+        let pre='', len=dur;
+        if(ev.tm&&ev.tStart){
+          let cnt=0; for(let j=i2;j<evs.length;j++){ cnt++; if(evs[j].tStop) break; }
+          pre=`(${ev.tm[0]}:${ev.tm[1]}:${cnt}`;
+        }
+        if(ev.tm){ const w=dur*ev.tm[0]/ev.tm[1]; if(Number.isInteger(w)) len=w; else pre=''; }
+        const body=ev.notes.length? (ev.notes.length>1?'['+ev.notes.map(n=>abcPitch(n,bar,keyAt[b])).join('')+']':abcPitch(ev.notes[0],bar,keyAt[b])) : 'z';
+        toks.push({kind:ev.notes.length?'note':'rest',body,len,tie:ev.tie&&ev.notes.length>0,pre});
+        t=start+dur;
+      }
+      if(t<barLen[b]) toks.push({kind:'rest',body:'x',len:barLen[b]-t});
+      bars.push(toks);
+    }
+    return {id,clef:v.clef,name:'',bars,pi:v.pi,staff:v.staff};
+  });
+  // %%score grouping: voices on one staff in ( ), staves of one part in { }
+  const score=[...new Set(voices.map(v=>v.pi))].map(pi=>{
+    const vs=voices.filter(v=>v.pi===pi), staves=[...new Set(vs.map(v=>v.staff))];
+    const grp=staves.map(s=>{ const ids=vs.filter(v=>v.staff===s).map(v=>v.id); return ids.length>1?'('+ids.join(' ')+')':String(ids[0]); });
+    return staves.length>1?'{'+grp.join(' ')+'}':grp.join(' ');
+  }).join(' ');
+  if(parts.length===1&&partNames[parts[0].getAttribute('id')]) {} // single instrument: no voice names needed
+  return renderAbc({title,composer,meter:firstMeter||'4/4',unitDen:4*TPQ,tempo,key:firstKey?firstKey.ks:'C',score,voices,barCount,barMeta});
+}
+
+/* Compressed MusicXML (.mxl is a zip file) */
+async function unzipMusicXml(buf){
+  const d=new DataView(buf), u8=new Uint8Array(buf);
+  let e=-1; for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-65557);i--) if(d.getUint32(i,true)===0x06054b50){ e=i; break; }
+  if(e<0) throw new Error('This .mxl file is damaged.');
+  const count=d.getUint16(e+10,true); let p=d.getUint32(e+16,true); const files={};
+  for(let i=0;i<count;i++){
+    if(d.getUint32(p,true)!==0x02014b50) break;
+    const method=d.getUint16(p+10,true), csize=d.getUint32(p+20,true), nl=d.getUint16(p+28,true), xl=d.getUint16(p+30,true), cl=d.getUint16(p+32,true), off=d.getUint32(p+42,true);
+    files[new TextDecoder().decode(u8.subarray(p+46,p+46+nl))]={method,csize,off}; p+=46+nl+xl+cl;
+  }
+  const read=async f=>{
+    const start=f.off+30+d.getUint16(f.off+26,true)+d.getUint16(f.off+28,true), data=u8.slice(start,start+f.csize);
+    if(f.method===0) return new TextDecoder().decode(data);
+    if(f.method!==8) throw new Error('This .mxl file uses an unsupported compression.');
+    if(typeof DecompressionStream==='undefined') throw new Error('This browser cannot open .mxl files. Export the score as uncompressed MusicXML (.musicxml) instead.');
+    return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  };
+  let target=null;
+  if(files['META-INF/container.xml']){ const m=(await read(files['META-INF/container.xml'])).match(/full-path="([^"]+)"/); if(m&&files[m[1]]) target=m[1]; }
+  if(!target) target=Object.keys(files).find(k=>!k.startsWith('META-INF')&&/\.(xml|musicxml)$/i.test(k));
+  if(!target) throw new Error('No score was found inside this .mxl file.');
+  return read(files[target]);
+}
+
+/* MIDI */
+function midiToAbc(buf, fileName){
+  const d=new DataView(buf); let p=0;
+  const str=n=>{ let s=''; for(let i=0;i<n;i++) s+=String.fromCharCode(d.getUint8(p+i)); p+=n; return s; };
+  if(buf.byteLength<14||str(4)!=='MThd') throw new Error('This is not a MIDI file.');
+  const hl=d.getUint32(p); p+=4; const ntr=d.getUint16(p+2), div=d.getUint16(p+4); p+=hl;
+  if(div&0x8000) throw new Error('This MIDI file uses a timing format that is not supported.');
+  const notes=[]; let tempo=null, ts=null, ks=null, trackName='';
+  for(let t=0;t<ntr&&p+8<=d.byteLength;t++){
+    const id=str(4), len=d.getUint32(p); p+=4; const end=Math.min(d.byteLength,p+len);
+    if(id!=='MTrk'){ p=end; continue; }
+    let tick=0, status=0; const on={};
+    const vlq=()=>{ let v=0,b; do{ b=d.getUint8(p++); v=(v*128)+(b&0x7f); }while(b&0x80&&p<end); return v; };
+    try{
+      while(p<end){
+        tick+=vlq(); let b=d.getUint8(p);
+        if(b&0x80){ status=b; p++; }
+        if(status===0xff){ const mt=d.getUint8(p++), ml=vlq();
+          if(mt===0x51&&tempo==null) tempo=60000000/((d.getUint8(p)<<16)|(d.getUint8(p+1)<<8)|d.getUint8(p+2));
+          else if(mt===0x58&&!ts) ts=[d.getUint8(p),Math.pow(2,d.getUint8(p+1))];
+          else if(mt===0x59&&!ks) ks=[d.getInt8(p),d.getUint8(p+1)];
+          else if((mt===0x03||mt===0x01)&&!trackName&&t===0) trackName=new TextDecoder().decode(new Uint8Array(buf,p,ml)).trim();
+          p+=ml; if(mt===0x2f) break; continue; }
+        if(status===0xf0||status===0xf7){ p+=vlq(); continue; }
+        const type=status&0xf0, ch=status&0x0f;
+        if(type===0x90||type===0x80){ const n=d.getUint8(p), v=d.getUint8(p+1); p+=2; const k=ch*128+n;
+          if(type===0x90&&v>0) (on[k]=on[k]||[]).push(tick);
+          else { const s=on[k]&&on[k].shift(); if(s!=null&&ch!==9) notes.push({midi:n,start:s,end:tick,track:t}); }
+          continue; }
+        p+= (type===0xc0||type===0xd0)?1:2;
+      }
+    }catch(e){ /* truncated track: keep what was read */ }
+    p=end;
+  }
+  if(!notes.length) throw new Error('No playable notes were found in this MIDI file.');
+  // quantize to a sixteenth-note grid
+  const grid=div/4, q=t=>Math.round(t/grid);
+  notes.forEach(n=>{ n.s=q(n.start); n.e=Math.max(n.s+1,q(n.end)); });
+  const [num,den]=ts||[4,4]; let bar=num*16/den; if(!Number.isInteger(bar)||bar<=0) bar=16;
+  const offset=Math.floor(Math.min(...notes.map(n=>n.s))/bar)*bar;
+  notes.forEach(n=>{ n.s-=offset; n.e-=offset; });
+  // split into right hand / left hand
+  const tracks=[...new Set(notes.map(n=>n.track))];
+  let hands;
+  if(tracks.length===2){
+    const avg=t=>{ const ns=notes.filter(n=>n.track===t); return ns.reduce((a,n)=>a+n.midi,0)/ns.length; };
+    const hi=avg(tracks[0])>=avg(tracks[1])?tracks[0]:tracks[1];
+    hands=[notes.filter(n=>n.track===hi),notes.filter(n=>n.track!==hi)];
+  } else hands=[notes.filter(n=>n.midi>=60),notes.filter(n=>n.midi<60)];
+  hands=hands.map((h,i)=>({notes:h,clef:i===0?'treble':'bass'})).filter(h=>h.notes.length);
+  const fifths=ks?ks[0]:0, minor=ks?ks[1]===1:false, flat=fifths<0;
+  const SPELL_S=[['C',0],['C',1],['D',0],['D',1],['E',0],['F',0],['F',1],['G',0],['G',1],['A',0],['A',1],['B',0]];
+  const SPELL_F=[['C',0],['D',-1],['D',0],['E',-1],['E',0],['F',0],['G',-1],['G',0],['A',-1],['A',0],['B',-1],['B',0]];
+  const spell=m=>{ const [step,alter]=(flat?SPELL_F:SPELL_S)[m%12]; return {step,alter,oct:Math.floor(m/12)-1}; };
+  const keyMap=keyAlters(fifths);
+  const STD=[16,12,8,6,4,3,2,1]; // whole, dotted half, half, dotted quarter, quarter, dotted eighth, eighth, sixteenth
+  const pieces=n=>{ const out=[]; for(const s of STD) while(n>=s){ out.push(s); n-=s; } return out; };
+  const lastEnd=Math.max(...notes.map(n=>n.e)), barCount=Math.max(1,Math.ceil(lastEnd/bar));
+  const voices=hands.map((h,hi)=>{
+    // segments: chords at each onset, cut off by the next onset
+    const byStart=new Map(); h.notes.forEach(n=>{ (byStart.get(n.s)||byStart.set(n.s,[]).get(n.s)).push(n); });
+    const starts=[...byStart.keys()].sort((a,b)=>a-b), segs=[];
+    starts.forEach((s,i)=>{ const ns=byStart.get(s), next=i+1<starts.length?starts[i+1]:Infinity;
+      const e=Math.min(next,Math.max(...ns.map(n=>n.e)));
+      segs.push({s,e,midis:[...new Set(ns.map(n=>n.midi))].sort((a,b)=>a-b)}); });
+    const bars=Array.from({length:barCount},()=>[]), barAcc=Array.from({length:barCount},()=>({}));
+    let t=0;
+    const emit=(s,e,midis)=>{ // split at bar lines and into standard lengths, tying notes across the pieces
+      while(s<e){
+        const b=Math.floor(s/bar), stop=Math.min(e,(b+1)*bar), ps=pieces(stop-s);
+        ps.forEach((len,i)=>{
+          const last=(i===ps.length-1)&&stop>=e;
+          const body=midis? (midis.length>1?'['+midis.map(m=>abcPitch(spell(m),barAcc[b],keyMap)).join('')+']':abcPitch(spell(midis[0]),barAcc[b],keyMap)) : 'z';
+          bars[b].push({kind:midis?'note':'rest',body,len,tie:!!midis&&!last});
+        });
+        s=stop;
+      }
+    };
+    segs.forEach(sg=>{ if(sg.s>t) emit(t,sg.s,null); emit(sg.s,sg.e,sg.midis); t=sg.e; });
+    if(t<barCount*bar) emit(t,barCount*bar,null);
+    return {id:hi+1,clef:h.clef,name:'',bars};
+  });
+  const title=(fileName||'').replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim()||trackName||'MIDI song';
+  return renderAbc({title,composer:'',meter:num+'/'+den,unitDen:16,tempo:tempo||100,key:abcKey(fifths,minor?'minor':'major'),
+    score:voices.length>1?'{'+voices.map(v=>v.id).join(' ')+'}':'1',voices,barCount,barMeta:[]});
+}
+
+async function importLocal(make, label){
+  try{
+    const abc=await make();
+    loadAbc(abc); saveSong(abc); showView('score');
+    setStatus(`Opened ${esc(label)} on this device, no internet needed. Saved to My songs.`);
+  }catch(e){ setStatus(esc(e.message||'This file could not be opened.'),'err'); }
+}
+
 /* ---------- offline copy ---------- */
 async function exportOffline(){
   const btn=$('#offlineBtn'); btn.disabled=true;
@@ -712,7 +990,7 @@ if(OFFLINE){
   const have=getSongs(), ids=new Set(have.map(s=>s.id));
   putSongs(have.concat(window.SMC_OFFLINE.filter(s=>!ids.has(s.id))));
   $('#offlineBtn').hidden=true;
-  $('#intakeHint').textContent='Offline copy: your saved songs, lessons and demo all work without internet. Reading photos and PDFs needs the online version.';
+  $('#intakeHint').textContent='Offline copy: your saved songs, lessons and demo work without internet, and MusicXML, MIDI and ABC files open here too. Reading photos and PDFs needs the online version.';
 }
 const startSong=OFFLINE&&songs()[0];
 if(startSong){ loadAbc(startSong.abc); currentSong='m:'+startSong.id; } else { loadAbc(SAMPLES.ode); currentSong='s:ode'; }
@@ -720,7 +998,7 @@ fillSongs();
 requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 (async()=>{
   if(OFFLINE||!(window.claude&&window.claude.use)){
-    if(!OFFLINE) $('#intakeHint').innerHTML='To read photos and PDFs, use the <a href="https://claude.ai/artifact/LdkHDji7A11UdAEjTqhjWy" target="_blank" rel="noopener">claude.ai version</a>. Here you can open your saved songs, the samples, or ABC files.';
+    if(!OFFLINE) $('#intakeHint').innerHTML='To read photos and PDFs, use the <a href="https://claude.ai/artifact/LdkHDji7A11UdAEjTqhjWy" target="_blank" rel="noopener">claude.ai version</a>. Here you can open your saved songs, the samples, and MusicXML, MIDI or ABC files, even offline.';
     return;
   }
   try{
