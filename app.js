@@ -287,9 +287,9 @@ function highlight(ev){
   document.querySelectorAll('#score .hl').forEach(e=>e.classList.remove('hl'));
   ev.els.forEach(e=>e&&e.classList&&e.classList.add('hl'));
   const el=ev.els[0]; if(!el||!$('#view-score').offsetParent) return;
-  const r=el.getBoundingClientRect(), dockH=$('.dock').offsetHeight;
-  if(r.top<70) window.scrollBy({top:r.top-90,behavior:'smooth'});
-  else if(r.bottom>innerHeight-dockH-20) window.scrollBy({top:r.bottom-(innerHeight-dockH)+60,behavior:'smooth'});
+  const sc=$('#scroller'), r=el.getBoundingClientRect(), sr=sc.getBoundingClientRect();
+  if(r.top<sr.top+60) sc.scrollBy({top:r.top-sr.top-80,behavior:'smooth'});
+  else if(r.bottom>sr.bottom-20) sc.scrollBy({top:r.bottom-sr.bottom+60,behavior:'smooth'});
 }
 
 function goTo(i, sound=true){
