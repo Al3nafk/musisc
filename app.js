@@ -67,7 +67,7 @@ const FIND={
   B:'the white key just to the right of the three black keys'
 };
 
-let notes=[], currentSong=null, imgLimits=null, downloadsCap=null;
+let notes=[], currentSong=null, imgLimits=null, downloadsCap=null, speedF=1;
 let vis=null, events=[], cur=0, meter={num:4,den:4}, msPerMeasure=2400, keyPref='sharp', clefs=['treble'], keyName='C major', tuneBpm=100;
 let ctx=null, master=null, play=null, sampleFn=null, kbRange=[48,84];
 
@@ -185,6 +185,7 @@ function loadAbc(abc){
   if(!nt.length) throw new Error('The notation has no notes to play.');
   vis=v; $('#abcText').value=abc;
   tuneBpm=hasTempo&&v.getBpm?v.getBpm():100;
+  setSpeed(1,'load');
   msPerMeasure=timer.millisecondsPerMeasure|| (nt[1]?nt[1].milliseconds*4:2400);
   meter=(v.getMeterFraction&&v.getMeterFraction())||{num:4,den:4};
   const first=v.lines.find(l=>l.staff);
@@ -393,7 +394,15 @@ function onNoteClick(abcelem){
 }
 
 /* ---------- demo playback ---------- */
-function speed(){ return +$('#speed').value/100; }
+function speed(){ return speedF; }
+// one speed value drives the slider, the % label and the BPM box
+function setSpeed(f, from){
+  speedF=Math.max(.05,Math.min(10,f));
+  if(from!=='slider') $('#speed').value=String(Math.round(Math.max(40,Math.min(150,speedF*100))/5)*5);
+  $('#speedOut').textContent=Math.round(speedF*100)+'%';
+  if(from!=='bpm') $('#bpmIn').value=String(Math.round(tuneBpm*speedF));
+  if(play&&from!=='load'){ const i=Math.max(play.idx,0); startDemo(i); }
+}
 function startDemo(from=firstNoteIndex()){
   if(!events.length) return;
   stopDemo(); audio();
@@ -434,7 +443,15 @@ function setPlayBtn(on){
 }
 $('#playBtn').onclick=()=> play?stopDemo():startDemo();
 $('#fromHereBtn').onclick=()=> startDemo(cur);
-$('#speed').oninput=()=>{ $('#speedOut').textContent=$('#speed').value+'%'; if(play){ const i=Math.max(play.idx,0); startDemo(i); } };
+$('#speed').oninput=()=>setSpeed(+$('#speed').value/100,'slider');
+$('#bpmIn').onchange=()=>{
+  const b=parseFloat($('#bpmIn').value);
+  if(!(b>0)){ $('#bpmIn').value=String(Math.round(tuneBpm*speedF)); return; }
+  const c=Math.max(20,Math.min(300,Math.round(b)));
+  $('#bpmIn').value=String(c);
+  setSpeed(c/tuneBpm,'bpm');
+};
+$('#bpmIn').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('#bpmIn').blur(); } });
 $('#prevBtn').onclick=()=>{ stopDemo(); goTo(nextIdx(cur,-1)); };
 $('#nextBtn').onclick=()=>{ stopDemo(); goTo(nextIdx(cur,1)); };
 $('#hearBtn').onclick=()=>{ stopDemo(); goTo(cur); };

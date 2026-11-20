@@ -77,6 +77,10 @@ select.btn{padding-right:10px}
 .transport{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .speed{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .speed input{width:110px;accent-color:var(--accent)}
+.speed #speedOut{min-width:3.2em}
+.bpm{display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted)}
+.bpm input{width:4.6em;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
+.bpm input:focus{border-color:var(--accent);outline:none}
 .view{padding:10px 14px 16px}
 #score{color:var(--ink)}
 #score svg path,#score svg text{fill:currentColor}
@@ -200,6 +204,7 @@ select.btn{padding-right:10px}
           </button>
           <button class="btn" id="fromHereBtn" type="button" title="Play from the current note">From here</button>
           <label class="speed" for="speed">Speed <input id="speed" type="range" min="40" max="150" step="5" value="100"><span id="speedOut">100%</span></label>
+          <label class="bpm" for="bpmIn" title="Type a tempo in beats per minute, then press Enter">Tempo <input id="bpmIn" type="number" min="20" max="300" step="1" inputmode="numeric" value="100"> BPM</label>
         </div>
       </div>
       <div class="view" id="view-score"><div id="score"></div></div>
