@@ -1,5 +1,5 @@
 // Musisc service worker: network first, cached copy when offline.
-const CACHE = 'musisc-v1';
+const CACHE = 'musisc-v2';
 const CORE = ['./', './index.html', './app.js', './abcjs-basic-min.js', './piano.json', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -15,7 +15,7 @@ self.addEventListener('fetch', e => {
   const cacheable = url.origin === location.origin || url.hostname.endsWith('fonts.googleapis.com') || url.hostname.endsWith('fonts.gstatic.com') || url.hostname === 'cdnjs.cloudflare.com';
   if (!cacheable) return;
   e.respondWith(
-    fetch(req).then(res => {
+    fetch(req, url.origin === location.origin ? { cache: 'no-cache' } : {}).then(res => {
       if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error())))

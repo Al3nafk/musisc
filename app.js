@@ -608,6 +608,18 @@ function setRoll(on){
   if(on) requestAnimationFrame(measureKeys);
 }
 $('#rollBtn').onclick=()=>setRoll(!rollOn);
+let pianoOpen=true;
+function setPiano(open){
+  pianoOpen=open;
+  $('.dock').classList.toggle('collapsed',!open);
+  $('#pianoBtn').textContent=open?'Hide piano ▾':'Show piano ▴';
+  $('#pianoBtn').setAttribute('aria-expanded',String(open));
+  $('#rollBtn').hidden=!open;
+  $('#dockLabel').hidden=!open;
+  try{ localStorage.setItem('smc.piano',open?'1':'0'); }catch(e){}
+  if(open) requestAnimationFrame(measureKeys);
+}
+$('#pianoBtn').onclick=()=>setPiano(!pianoOpen);
 
 /* ---------- song library ---------- */
 const SAMPLE_NAMES={ode:'Ode to Joy (melody)',ode2:'Ode to Joy (both hands)',twinkle:'Twinkle, Twinkle, Little Star',minuet:'Minuet in G'};
@@ -982,7 +994,7 @@ async function exportOffline(){
 $('#offlineBtn').onclick=exportOffline;
 
 /* ---------- boot ---------- */
-try{ if(localStorage.getItem('smc.roll')==='0') setRoll(false); }catch(e){}
+try{ if(localStorage.getItem('smc.roll')==='0') setRoll(false); if(localStorage.getItem('smc.piano')==='0') setPiano(false); }catch(e){}
 addEventListener('pointerdown',()=>audio(),{once:true,capture:true}); // start loading the piano on first touch
 addEventListener('keydown',()=>audio(),{once:true,capture:true});
 if(OFFLINE){
