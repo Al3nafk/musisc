@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#10141B"/>
+  <rect x="96" y="96" width="44" height="190" rx="10" fill="#5BE07A"/>
+  <rect x="176" y="150" width="44" height="136" rx="10" fill="#38D6F5"/>
+  <rect x="256" y="70" width="44" height="216" rx="10" fill="#38D6F5"/>
+  <rect x="336" y="180" width="44" height="106" rx="10" fill="#1A8FE0"/>
+  <rect x="72" y="312" width="368" height="128" rx="14" fill="#E9ECF2"/>
+  <g fill="#10141B">
+    <rect x="124" y="312" width="28" height="74" rx="4"/><rect x="190" y="312" width="28" height="74" rx="4"/>
+    <rect x="294" y="312" width="28" height="74" rx="4"/><rect x="346" y="312" width="28" height="74" rx="4"/>
+  </g>
+  <g stroke="#9AA3B5" stroke-width="3"><line x1="124" y1="392" x2="124" y2="440"/><line x1="176" y1="392" x2="176" y2="440"/><line x1="228" y1="312" x2="228" y2="440"/><line x1="280" y1="312" x2="280" y2="440"/><line x1="332" y1="392" x2="332" y2="440"/><line x1="384" y1="392" x2="384" y2="440"/></g>
+</svg>

@@ -1,0 +1,15 @@
+{
+  "name": "Sheet Music Coach",
+  "short_name": "Music Coach",
+  "description": "Learn sheet music note by note with falling notes on a piano, and hear the whole song.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#10141B",
+  "theme_color": "#10141B",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
