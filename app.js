@@ -215,8 +215,8 @@ function loadAbc(abc){
     <span><b>${noteCount}</b> notes</span>`;
   // keyboard range
   const all=events.flatMap(e=>e.pitches.map(p=>p.midi));
-  let lo=Math.min(...all,48), hi=Math.max(...all,83);
-  lo=Math.floor(lo/12)*12; hi=Math.ceil((hi+1)/12)*12;
+  // full 88-key piano: A0 (21) to C8 (108); widen only if a song goes beyond it
+  const lo=Math.min(21,...all), hi=Math.max(109,...all.map(m=>m+1));
   kbRange=[lo,hi]; buildKeyboard();
   notes=events.flatMap(e=>e.pitches.map(p=>({midi:p.midi,start:e.ms,dur:Math.max(60,p.ms-20),hand:handOf(p.midi)})));
   rollHead=rollTarget=0; requestAnimationFrame(measureKeys);
