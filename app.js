@@ -657,7 +657,7 @@ async function pdfLib(){
   return window.pdfjsLib;
 }
 async function handlePdf(file){
-  if(!sampleFn||!imgLimits){ setStatus(OFFLINE?'Reading PDFs needs internet. Open the online Sheet Music Coach on claude.ai to read it, then make a new offline copy.':'Reading PDFs needs the app opened on claude.ai.','err'); return; }
+  if(!sampleFn||!imgLimits){ setStatus(OFFLINE?'Reading PDFs needs internet. Open the online Musisc on claude.ai to read it, then make a new offline copy.':'Reading PDFs needs the app opened on claude.ai.','err'); return; }
   setStatus('<span class="spin"></span><span>Opening your PDF…</span>');
   let lib;
   try{ lib=await pdfLib(); }catch(e){ setStatus('Could not load the PDF reader. Check your internet connection and try again.','err'); return; }
@@ -689,9 +689,9 @@ async function exportOffline(){
   try{
     const [lib,app,piano]=await Promise.all(['abcjs-basic-min.js','app.js','piano.json'].map(f=>fetch(f).then(r=>{ if(!r.ok) throw new Error(f); return r.text(); })));
     const css=$('#smc-css').textContent, safe=t=>t.replace(/<\/script/gi,'<\\/script');
-    const html='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Sheet Music Coach (offline)</title><style>'+css+'</style></head><body>'
+    const html='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Musisc (offline)</title><style>'+css+'</style></head><body>'
       +APP_HTML+'<script>'+safe(lib)+'</'+'script><script>window.SMC_OFFLINE='+safe(JSON.stringify(songs()))+';window.SMC_PIANO='+piano+';</'+'script><script>'+safe(app)+'</'+'script></body></html>';
-    const name='Sheet Music Coach (offline).html';
+    const name='Musisc (offline).html';
     if(downloadsCap) await downloadsCap.save({filename:name,data:new Blob([html],{type:'text/html'})});
     else { const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([html],{type:'text/html'})); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
     const n=songs().length;

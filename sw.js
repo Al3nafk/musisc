@@ -1,5 +1,5 @@
-// Sheet Music Coach service worker: network first, cached copy when offline.
-const CACHE = 'smc-v1';
+// Musisc service worker: network first, cached copy when offline.
+const CACHE = 'musisc-v1';
 const CORE = ['./', './index.html', './app.js', './abcjs-basic-min.js', './piano.json', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {

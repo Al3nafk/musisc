@@ -1,6 +1,6 @@
 {
-  "name": "Sheet Music Coach",
-  "short_name": "Music Coach",
+  "name": "Musisc",
+  "short_name": "Musisc",
   "description": "Learn sheet music note by note with falling notes on a piano, and hear the whole song.",
   "start_url": "./",
   "scope": "./",
