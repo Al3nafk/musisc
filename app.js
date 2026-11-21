@@ -74,7 +74,7 @@ let ctx=null, master=null, play=null, sampleFn=null, kbRange=[48,84];
 /* ---------- audio ---------- */
 // Recorded grand piano (Fluid R3 GM, every third note; the notes between are pitch-shifted),
 // a soft room reverb, and a gentle limiter. Falls back to a clean additive tone until samples load.
-let pianoBuf={}, pianoState='idle';
+let pianoBuf={}, pianoState='idle', pedalIn=null;
 function audio(){
   if(!ctx){
     ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -87,6 +87,11 @@ function audio(){
     const verb=ctx.createConvolver(); verb.buffer=roomImpulse(1.8);
     master.connect(dry); dry.connect(comp);
     master.connect(verb); verb.connect(wet); wet.connect(comp);
+    // sustain pedal: with the dampers up the other strings ring along, a longer and richer resonance
+    pedalIn=ctx.createGain(); pedalIn.gain.value=1;
+    const res=ctx.createConvolver(); res.buffer=roomImpulse(3.4);
+    const resWet=ctx.createGain(); resWet.gain.value=.3;
+    pedalIn.connect(res); res.connect(resWet); resWet.connect(comp);
     loadPiano();
   }
   if(ctx.state!=='running') ctx.resume().catch(()=>{}); // also covers Safari's "interrupted" state
@@ -132,7 +137,7 @@ async function loadPiano(){
     pianoState='ready';
   }catch(e){ pianoState='failed'; }
 }
-function tone(midi, when, dur, dest, vel=.6){
+function tone(midi, when, dur, dest, vel=.6, pedal=false){
   const end=when+Math.max(.12,dur), out=dest||master;
   if(MIC.on&&!dest?.isMicTest) MIC.ignoreUntil=Math.max(MIC.ignoreUntil,end+0.35);
   const g=ctx.createGain(); g.connect(out);
@@ -141,8 +146,15 @@ function tone(midi, when, dur, dest, vel=.6){
     const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=Math.pow(2,(midi-near)/12);
     src.connect(g);
     g.gain.setValueAtTime(vel,when);
-    g.gain.setTargetAtTime(0,end,.11);          // damper: smooth release, no click
-    src.start(when); src.stop(end+1.2);
+    if(pedal&&end-when>.5){
+      // pedal held: the recorded note fades fast, so lift its tail to keep it ringing under what follows
+      const top=Math.min(end, when+buf.duration/src.playbackRate.value-.05);
+      g.gain.setValueAtTime(vel,when+.25);
+      g.gain.linearRampToValueAtTime(vel*Math.min(3.2,1+(top-when-.25)*1.1),top);
+      g.gain.setTargetAtTime(0,end,.22);        // pedal up: dampers fall a little more softly
+      if(!dest&&pedalIn) g.connect(pedalIn);
+    } else g.gain.setTargetAtTime(0,end,.11);   // damper: smooth release, no click
+    src.start(when); src.stop(end+(pedal?1.6:1.2));
     return;
   }
   // fallback: soft additive tone with a smooth envelope
@@ -158,7 +170,7 @@ function tone(midi, when, dur, dest, vel=.6){
   g.gain.setTargetAtTime(0,end,.1);
   oscs.forEach(o=>{ o.start(when); o.stop(end+1); });
 }
-function hear(midis, dur=.7){ audio(); midis.forEach(m=>tone(m,ctx.currentTime+.02,dur)); }
+function hear(midis, dur=.7, pedal=false){ audio(); midis.forEach(m=>tone(m,ctx.currentTime+.02,dur,undefined,.6,pedal)); }
 
 /* ---------- music helpers ---------- */
 function info(midi){
@@ -285,7 +297,7 @@ let pointerDown=false;
 $('#kb').addEventListener('pointerdown',e=>{
   const k=e.target.closest('[data-midi]'); if(!k) return;
   e.preventDefault();
-  const m=+k.dataset.midi; hear([m],pedalMode==='off'?.9:2.6); onKeyPlayed(m);
+  const m=+k.dataset.midi; hear([m],pedalMode==='off'?.9:2.8,pedalMode!=='off'); onKeyPlayed(m);
 });
 
 function onKeyPlayed(m){
@@ -454,7 +466,8 @@ function startDemo(from=firstNoteIndex()){
     });
   }
   if(win>0){ const last={}; list.slice().sort((a,b)=>a.start-b.start).forEach(n=>{ const prev=last[n.midi]; if(prev&&prev.end>n.start) prev.end=Math.max(prev.start+60,n.start-10); last[n.midi]=n; }); }
-  list.forEach(n=>tone(n.midi,t0+(n.start-base)/1000/sp,Math.max(.1,(n.end-n.start)/1000/sp),bus,n.vel));
+  if(win>0&&pedalIn) bus.connect(pedalIn); // the demo's notes share the pedal resonance (and stop with the demo)
+  list.forEach(n=>tone(n.midi,t0+(n.start-base)/1000/sp,Math.max(.1,(n.end-n.start)/1000/sp),bus,n.vel,win>0));
   const last=events[events.length-1];
   const endT=t0+((last.ms-base)+last.gap)/1000/sp+.3;
   play={bus,t0,base,sp,idx:from-1,endT,raf:0};
