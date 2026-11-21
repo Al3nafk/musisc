@@ -102,7 +102,7 @@ function silentWav(){
   return URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
 }
 function unlockAudio(){
-  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+  try{ if(navigator.audioSession&&!(typeof MIC!=='undefined'&&MIC.on)) navigator.audioSession.type='playback'; }catch(e){}
   audio();
   try{ // play one silent sample inside the gesture: older iOS needs it to really start
     const s=ctx.createBufferSource(); s.buffer=ctx.createBuffer(1,1,22050); s.connect(ctx.destination); s.start(0);
@@ -715,9 +715,21 @@ function setPiano(open){
 $('#pianoBtn').onclick=()=>setPiano(!pianoOpen);
 
 /* ---------- choosing the microphone (built-in or another one) ---------- */
-const BUILTIN=/built-?in|internal|integrated|array|macbook|iphone|ipad|front|bottom|default.*(mic|input)|realtek/i;
+const BUILTIN=/built-?in|internal|integrated|array|macbook|iphone|ipad|front|back|bottom|top|speakerphone|handset|phone mic|default.*(mic|input)|realtek/i;
 function micPref(){ try{ return localStorage.getItem('smc.mic')||''; }catch(e){ return ''; } }
 function setMicPref(id){ try{ id?localStorage.setItem('smc.mic',id):localStorage.removeItem('smc.mic'); }catch(e){} }
+// iPhone/iPad: with the mic on, Safari would route sound to the quiet earpiece unless the page says it
+// plays and records at once. Phones: keep the screen awake, a locked screen stops the microphone.
+function setAudioSession(type){ try{ if(navigator.audioSession) navigator.audioSession.type=type; }catch(e){} }
+let wakeLock=null;
+async function keepAwake(on){
+  try{
+    if(on&&'wakeLock' in navigator&&!wakeLock){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{ wakeLock=null; }); }
+    else if(!on&&wakeLock){ await wakeLock.release(); wakeLock=null; }
+  }catch(e){ wakeLock=null; }
+}
+// coming back to the tab: the screen lock (and the wake lock) may have been lost
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&MIC.on) keepAwake(true); });
 async function openMic(id){
   const audio={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
   if(id) audio.deviceId={exact:id};
@@ -1013,15 +1025,17 @@ async function micStart(from=cur){
   stopDemo(); audio();
   try{
     if(!MIC.test){
+      setAudioSession('play-and-record');
       MIC.stream=await openMic(micPref());
       MIC.src=ctx.createMediaStreamSource(MIC.stream);
     } else MIC.src=MIC.test;
   }catch(e){
+    setAudioSession('playback');
     const blocked=e&&(e.name==='NotAllowedError'||e.name==='SecurityError');
     setStatus(blocked?(sampleFn?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to practice with the mic.':'Musisc needs permission to use the microphone. Allow it in your browser (the icon next to the address), then press Practice with mic again.'):'No microphone was found. Plug one in or use a device with a mic.','err');
     return;
   }
-  if(!MIC.test) fillMicList();
+  if(!MIC.test){ fillMicList(); keepAwake(true); }
   MIC.an=ctx.createAnalyser(); MIC.an.fftSize=8192; MIC.an.smoothingTimeConstant=0;
   MIC.td=new Float32Array(MIC.an.fftSize); MIC.fd=new Float32Array(MIC.an.frequencyBinCount); MIC.mag=new Float32Array(MIC.an.frequencyBinCount);
   MIC.src.connect(MIC.an);
@@ -1046,6 +1060,7 @@ function micStop(quiet){
   try{ MIC.src&&MIC.src.disconnect(); }catch(e){}
   if(MIC.stream) MIC.stream.getTracks().forEach(t=>t.stop());
   MIC.stream=null; MIC.src=null; MIC.tempo=null;
+  keepAwake(false); setAudioSession('playback');
   $('#micBtn').classList.remove('active'); $('#micBtn').lastChild.textContent=' Practice with mic';
   $('#lessonMode').textContent='Learn note by note';
   if(!quiet){ $('#micBar').hidden=true; }
