@@ -170,11 +170,12 @@ select.btn{padding-right:10px}
 @media (max-width:640px){.roll{height:clamp(100px,22vh,170px)}}
 .dock-r{display:flex;align-items:center;gap:10px;margin-left:auto}
 .btn.mini{padding:3px 10px;font-size:.78rem}
-.dock-play{display:inline-flex;gap:6px}
+.dock-play{display:inline-flex;gap:6px;flex:none}
+#dockLabel{margin-right:auto}
 .dock-play .btn{gap:5px}
 .dock-play svg{width:14px;height:14px}
 #dockPlay{min-width:84px;justify-content:center}
-@media (max-width:640px){ #dockLabel{display:none} .dock-head{flex-wrap:wrap} .dock-r{flex-wrap:wrap;margin-left:0;width:100%;row-gap:6px;gap:6px} .dock-play{margin-right:auto} #dockNow:empty{display:none} }
+@media (max-width:640px){ #dockLabel{display:none} .dock-head{flex-wrap:wrap} .dock-r{flex-wrap:wrap;justify-content:flex-end;row-gap:6px;gap:6px} #dockNow:empty{display:none} }
 .dock.collapsed .kb-scroll{display:none}
 .dock.collapsed{padding-top:6px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 6px)}
 .dock.collapsed .dock-head{margin-bottom:0}
@@ -312,8 +313,9 @@ select.btn{padding-right:10px}
 <div class="dock">
   <div class="wrap">
     <div class="dock-head">
+      <span class="dock-play"><button class="btn mini primary" id="dockPlay" type="button" aria-pressed="false" title="Play the demo (Space)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Play</span></button><button class="btn mini" id="dockRestart" type="button" title="Play from the beginning" aria-label="Play from the beginning" hidden><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button></span>
       <span id="dockLabel"><i class="sw r"></i>Right hand <i class="sw l"></i>Left hand · notes fall onto the key to press</span>
-      <span class="dock-r"><span class="dock-play"><button class="btn mini primary" id="dockPlay" type="button" aria-pressed="false" title="Play the demo (Space)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Play</span></button><button class="btn mini" id="dockRestart" type="button" title="Play from the beginning" aria-label="Play from the beginning" hidden><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button></span><span id="dockNow"></span><button class="btn mini" id="rollBtn" type="button" aria-pressed="true">Hide falling notes</button><button class="btn mini primary" id="pianoBtn" type="button" aria-expanded="true" aria-controls="kbScroll">Hide piano ▾</button></span>
+      <span class="dock-r"><span id="dockNow"></span><button class="btn mini" id="rollBtn" type="button" aria-pressed="true">Hide falling notes</button><button class="btn mini primary" id="pianoBtn" type="button" aria-expanded="true" aria-controls="kbScroll">Hide piano ▾</button></span>
     </div>
     <div class="kb-scroll" id="kbScroll"><div class="kb-inner" id="kbInner"><canvas id="roll" class="roll" aria-label="Falling notes"></canvas><div class="kb" id="kb"></div></div></div>
   </div>
