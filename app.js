@@ -543,13 +543,23 @@ async function finishAbc(text){
   try{ loadAbc(abc); saveSong(abc); showView('score'); setStatus(`Saved to My songs. Check the score against your original; if a note looks wrong, fix it in the Notation tab. <button class="btn" type="button" onclick="this.parentNode.hidden=true">OK</button>`); }
   catch(e){ $('#abcText').value=abc; showView('text'); setStatus('The music was read but could not be drawn. Look over the notation and press Apply changes.','err'); }
 }
-async function handleImage(file){
-  if(!file.type.startsWith('image/')){ setStatus('Please use an image (JPG, PNG, WebP or GIF). For a PDF, take a screenshot of the page.','err'); return; }
-  const url=URL.createObjectURL(file);
-  $('#orig').innerHTML=`<img alt="Your original sheet music" src="${url}">`; $('#tab-orig').hidden=false;
-  if(!sampleFn&&OMR_HERE) return offlineRead([file], file.name);
-  const text=await askClaude(PROMPT,{images:[file]},'Reading your sheet music… this can take up to a minute');
+function readMode(){ return (sampleFn&&imgLimits)?'claude':(OMR_HERE?'local':null); }
+function pageLimit(){ return readMode()==='local'?10:Math.min((imgLimits&&imgLimits.maxCount)||4, 6); }
+function noReader(){ setStatus(OFFLINE?'Reading photos and PDFs needs the online Musisc. Open it, read the music there, then make a new offline copy.':'Reading photos and PDFs needs the app opened on claude.ai.','err'); }
+// blobs: page images in order; total: how many pages there were before the limit
+async function readPages(blobs, name, total=blobs.length){
+  const mode=readMode(); if(!mode) return noReader();
+  $('#orig').innerHTML=blobs.map((b,i)=>`<img alt="Page ${i+1} of your sheet music" src="${URL.createObjectURL(b)}" style="margin-bottom:12px">`).join('');
+  $('#tab-orig').hidden=false;
+  if(mode==='local') return offlineRead(blobs, name);
+  const note=total>blobs.length?` Only the first ${blobs.length} of ${total} pages are read.`:'';
+  const prompt=(blobs.length>1?`The ${blobs.length} images are consecutive pages of one piece, in order. Transcribe them as one continuous tune.\n`:'')+PROMPT;
+  const text=await askClaude(prompt,{images:blobs},(blobs.length>1?`Reading ${blobs.length} pages… this can take a minute or two.`:'Reading your sheet music… this can take up to a minute.')+note);
   finishAbc(text);
+}
+async function handleImage(file){
+  if(!file.type.startsWith('image/')){ setStatus('Please use an image (JPG, PNG, WebP or GIF), or a PDF.','err'); return; }
+  return readPages([file], file.name);
 }
 async function handleText(t){
   t=t.trim(); if(!t) return;
@@ -569,14 +579,53 @@ async function handleFile(f){
   if(/\.(abc|txt|xml|musicxml)$/i.test(f.name)||f.type.startsWith('text/')) return handleText(await f.text());
   setStatus('That file type is not supported. Use a photo, screenshot or PDF of the sheet, or a MusicXML (.musicxml, .mxl), MIDI (.mid) or ABC (.abc) file.','err');
 }
-$('#fileIn').onchange=e=>{ handleFile(e.target.files[0]); e.target.value=''; };
+const isPageFile=f=>f.type.startsWith('image/')||f.type==='application/pdf'||/\.pdf$/i.test(f.name);
+// MusicXML, MIDI and ABC files -> ABC, all on this device
+async function scoreFileToAbc(f){
+  if(/\.mxl$/i.test(f.name)) return musicXmlToAbc(await unzipMusicXml(await f.arrayBuffer()));
+  if(/\.(mid|midi|kar)$/i.test(f.name)||/midi|mid$/.test(f.type)) return midiToAbc(await f.arrayBuffer(), f.name);
+  const t=(await f.text()).trim();
+  if(/<score-partwise/.test(t)) return musicXmlToAbc(t);
+  if(isAbc(t)) return t;
+  throw new Error('not a MusicXML, MIDI or ABC file');
+}
+async function handleFiles(list){
+  const files=[...(list||[])].filter(Boolean);
+  if(files.length<=1) return handleFile(files[0]);
+  files.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'}));
+  const pages=files.filter(isPageFile), scores=files.filter(f=>!isPageFile(f));
+  let done='';
+  if(scores.length){
+    const ok=[], bad=[];
+    for(const f of scores){
+      setStatus(`<span class="spin"></span><span>Opening ${esc(f.name)}…</span>`);
+      try{ const abc=await scoreFileToAbc(f); loadAbc(abc); saveSong(abc); ok.push(f.name); }catch(e){ bad.push(f.name); }
+    }
+    if(ok.length) showView('score');
+    done=(ok.length?`Opened ${ok.length} file${ok.length>1?'s':''} and saved ${ok.length>1?'them':'it'} to My songs (showing ${esc(ok[ok.length-1])}).`:'')
+      +(bad.length?` Could not open: ${bad.map(esc).join(', ')}. Use MusicXML, MIDI, ABC, photos or PDFs.`:'');
+    if(!pages.length){ setStatus(done.trim(), ok.length?'':'err'); return; }
+  }
+  if(!readMode()) return noReader();
+  // photos and PDF pages, in file-name order, are read as the pages of one piece
+  const max=pageLimit(), blobs=[]; let total=0;
+  try{
+    for(const f of pages){
+      if(f.type.startsWith('image/')){ total++; if(blobs.length<max) blobs.push(f); }
+      else { const r=await pdfPages(f,Math.max(1,max-blobs.length)); total+=r.total; blobs.push(...r.blobs.slice(0,max-blobs.length)); }
+    }
+  }catch(e){ setStatus(e.message,'err'); return; }
+  if(done) setStatus(done.trim());
+  return readPages(blobs, pages[0].name, total);
+}
+$('#fileIn').onchange=e=>{ handleFiles(e.target.files); e.target.value=''; };
 $('#camIn').onchange=e=>{ handleFile(e.target.files[0]); e.target.value=''; };
 $('#pasteBtn').onclick=()=>setStatus('Copy an image of sheet music (or ABC text), then press Ctrl+V here. On a phone, long-press the Notation box and choose Paste.');
 document.addEventListener('paste',e=>{
   if(e.target.closest('textarea,input')) return;
   const items=[...(e.clipboardData?.items||[])];
-  const img=items.find(i=>i.type.startsWith('image/'));
-  if(img){ e.preventDefault(); handleImage(img.getAsFile()); return; }
+  const imgs=items.filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);
+  if(imgs.length){ e.preventDefault(); imgs.length>1?handleFiles(imgs):handleImage(imgs[0]); return; }
   const t=e.clipboardData?.getData('text'); if(t){ e.preventDefault(); handleText(t); }
 });
 let dragDepth=0;
@@ -585,7 +634,7 @@ addEventListener('dragleave',()=>{ if(--dragDepth<=0){dragDepth=0;$('#dropOv').h
 addEventListener('dragover',e=>e.preventDefault());
 addEventListener('drop',e=>{
   e.preventDefault(); dragDepth=0; $('#dropOv').hidden=true;
-  const f=e.dataTransfer.files[0]; if(f) return handleFile(f);
+  if(e.dataTransfer.files.length) return handleFiles(e.dataTransfer.files);
   const t=e.dataTransfer.getData('text'); if(t) handleText(t);
 });
 
@@ -849,33 +898,29 @@ async function pdfLib(){
   if(!window.pdfjsWorker) await loadScript(base+'pdf.worker.min.js'); // runs the PDF engine on the page itself
   return window.pdfjsLib;
 }
-async function handlePdf(file){
-  const local=!(sampleFn&&imgLimits)&&OMR_HERE;
-  if(!local&&(!sampleFn||!imgLimits)){ setStatus(OFFLINE?'Reading PDFs needs internet. Open the online Musisc on claude.ai to read it, then make a new offline copy.':'Reading PDFs needs the app opened on claude.ai.','err'); return; }
-  setStatus('<span class="spin"></span><span>Opening your PDF…</span>');
+async function pdfPages(file, max){
+  setStatus('<span class="spin"></span><span>Opening '+esc(file.name||'your PDF')+'…</span>');
   let lib;
-  try{ lib=await pdfLib(); }catch(e){ setStatus('Could not load the PDF reader. Check your internet connection and try again.','err'); return; }
-  try{
-    const pdf=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
-    const max=local?Math.min(pdf.numPages,10):Math.min(pdf.numPages, imgLimits.maxCount||4, 6);
-    const blobs=[], urls=[];
-    for(let i=1;i<=max;i++){
-      setStatus(`<span class="spin"></span><span>Preparing page ${i} of ${max}…</span>`);
-      const page=await pdf.getPage(i), base=page.getViewport({scale:1});
-      const vp=page.getViewport({scale:Math.min(3,1800/base.width)});
-      const c=document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
-      const cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height);
-      await page.render({canvasContext:cx,viewport:vp}).promise;
-      const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.92)); blobs.push(b); urls.push(URL.createObjectURL(b));
-    }
-    $('#orig').innerHTML=urls.map((u,i)=>`<img alt="Page ${i+1} of your PDF" src="${u}" style="margin-bottom:12px">`).join('');
-    $('#tab-orig').hidden=false;
-    if(local) return offlineRead(blobs, file.name);
-    const note=pdf.numPages>max?` Only the first ${max} of ${pdf.numPages} pages are read.`:'';
-    const prompt=(blobs.length>1?`The ${blobs.length} images are consecutive pages of one piece, in order. Transcribe them as one continuous tune.\n`:'')+PROMPT;
-    const text=await askClaude(prompt,{images:blobs},`Reading ${blobs.length>1?blobs.length+' pages':'your PDF'}… this can take a minute or two.${note}`);
-    finishAbc(text);
-  }catch(e){ setStatus('That PDF could not be opened. If it is password-protected, remove the password or take a screenshot of the page instead.','err'); }
+  try{ lib=await pdfLib(); }catch(e){ throw new Error('Could not load the PDF reader. Check your internet connection and try again.'); }
+  let pdf;
+  try{ pdf=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise; }
+  catch(e){ throw new Error(esc(file.name||'That PDF')+' could not be opened. If it is password-protected, remove the password or take a screenshot of the page instead.'); }
+  const n=Math.min(pdf.numPages,max), blobs=[];
+  for(let i=1;i<=n;i++){
+    setStatus(`<span class="spin"></span><span>Preparing page ${i} of ${n}…</span>`);
+    const page=await pdf.getPage(i), base=page.getViewport({scale:1});
+    const vp=page.getViewport({scale:Math.min(3,1800/base.width)});
+    const c=document.createElement('canvas'); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
+    const cx=c.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:cx,viewport:vp}).promise;
+    blobs.push(await new Promise(r=>c.toBlob(r,'image/jpeg',.92)));
+  }
+  return {blobs,total:pdf.numPages};
+}
+async function handlePdf(file){
+  if(!readMode()) return noReader();
+  try{ const {blobs,total}=await pdfPages(file,pageLimit()); return readPages(blobs,file.name,total); }
+  catch(e){ setStatus(e.message,'err'); }
 }
 
 /* ---------- offline reader: photos and PDFs read on this device ----------
