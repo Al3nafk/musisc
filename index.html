@@ -53,6 +53,17 @@ header{padding-block:18px 10px;display:flex;flex-wrap:wrap;gap:12px 24px;align-i
 .brand p{margin:2px 0 0;color:var(--muted);font-size:.9rem}
 
 .intake{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;border:1.5px dashed var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
+.find{margin-top:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
+.find form{display:flex;gap:8px;flex-wrap:wrap}
+.find input{flex:1 1 200px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit;background:var(--bg);color:inherit}
+.find .results{max-height:min(240px,32vh);overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:10px}
+.find .results:empty{display:none}
+.hit{text-align:left;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--bg);color:inherit;font:inherit;cursor:pointer;min-width:0}
+.hit:hover,.hit:focus-visible{border-color:var(--accent)}
+.hit[aria-current]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.hit b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hit span{font-size:.8rem;color:var(--muted)}
+.find .foot{margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .intake .hint{flex:1 1 220px;min-width:0;align-self:center;color:var(--muted);font-size:.88rem;padding:0 6px}
 .btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 14px;font-weight:500;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
@@ -187,6 +198,14 @@ select.btn{padding-right:10px}
       Offline copy
     </button>
     <div class="hint" id="intakeHint">Drop a photo, screenshot or PDF of sheet music anywhere on this page, or press Ctrl+V to paste one. MusicXML and MIDI files open instantly, even offline.</div>
+  </section>
+  <section class="find" id="find" aria-label="Search sheet music online">
+    <form id="findForm" role="search">
+      <input id="findIn" type="search" placeholder="Search sheet music by name, e.g. Star of the County Down" aria-label="Song name" autocomplete="off">
+      <button class="btn primary" type="submit" id="findBtn">Search online</button>
+    </form>
+    <div class="results" id="findResults"></div>
+    <div class="foot small" id="findFoot"></div>
   </section>
   <div id="status" class="status" hidden></div>
 

@@ -680,6 +680,64 @@ $('#applyBtn').onclick=()=>{
   catch(e){ $('#applyMsg').textContent=e.message+' Check the notation for typos.'; }
 };
 
+/* ---------- online search (The Session: free tune library with ABC notation) ---------- */
+const TS='https://thesession.org';
+const TS_METER={reel:'4/4',hornpipe:'4/4',barndance:'4/4',strathspey:'4/4',march:'4/4',jig:'6/8','slip jig':'9/8',slide:'12/8',polka:'2/4',waltz:'3/4',mazurka:'3/4','three-two':'3/2'};
+const TS_MODE={major:'maj',minor:'min',dorian:'dor',mixolydian:'mix',lydian:'lyd',phrygian:'phr',locrian:'loc'};
+let findQ='', findPage=1, findCtl=null;
+function findFoot(){
+  const q=$('#findIn').value.trim();
+  const imslp='https://imslp.org/index.php?title=Special:Search&search='+encodeURIComponent(q||'piano');
+  $('#findFoot').innerHTML=navigator.onLine
+    ? `Tunes from <a href="${TS}" target="_blank" rel="noopener">The Session</a> open here instantly. For classical piano, <a href="${imslp}" target="_blank" rel="noopener">search IMSLP</a> and drop the PDF in.`
+    : 'You are offline. Search needs an internet connection; your saved songs still open from the menu above.';
+  $('#findBtn').disabled=!navigator.onLine;
+}
+function sessionAbc(tune, setting){
+  const meter=TS_METER[tune.type]||'4/4', compound=/\/8$/.test(meter);
+  const m=/^([A-G][b#]?)(\w+)$/.exec(setting.key||'')||[];
+  const key=(m[1]||'C')+(TS_MODE[(m[2]||'').toLowerCase()]||'');
+  const body=String(setting.abc||'').replace(/\r/g,'').replace(/!(?![A-Za-z<>+.()]+!)/g,'\n').replace(/\n{2,}/g,'\n').trim();
+  return `X:1\nT:${tune.name}\nC:Traditional (thesession.org/tunes/${tune.id})\nR:${tune.type||''}\nM:${meter}\nL:1/8\nQ:${compound?'3/8=72':'1/4=110'}\nK:${key}\n${body}\n`;
+}
+async function searchOnline(q, page=1){
+  if(!navigator.onLine){ findFoot(); return; }
+  findQ=q; findPage=page; if(findCtl) findCtl.abort(); findCtl=new AbortController();
+  const box=$('#findResults');
+  if(page===1) box.innerHTML='';
+  setStatus('<span class="spin"></span><span>Searching for "'+esc(q)+'"…</span>');
+  try{
+    const r=await fetch(`${TS}/tunes/search?q=${encodeURIComponent(q)}&format=json&perpage=12&page=${page}`,{signal:findCtl.signal});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const old=$('#findMore'); if(old) old.remove();
+    if(!d.tunes||!d.tunes.length){ setStatus(page===1?`No sheet music found for "${esc(q)}". Try a shorter name or a different spelling.`:''); return; }
+    box.insertAdjacentHTML('beforeend', d.tunes.map(t=>`<button type="button" class="hit" data-id="${+t.id}" title="${esc(t.name)}"><b>${esc(t.name)}</b><span>${esc(t.type||'tune')}${t.alias&&t.alias!==t.name?' · also “'+esc(t.alias)+'”':''}</span></button>`).join(''));
+    if(d.page<d.pages){ box.insertAdjacentHTML('afterend','<button class="btn" type="button" id="findMore" style="margin-top:8px">More results</button>'); $('#findMore').onclick=()=>searchOnline(findQ, findPage+1); }
+    setStatus(`${d.total} result${d.total==1?'':'s'} for "${esc(q)}". Pick one to open it.`);
+  }catch(e){
+    if(e.name==='AbortError') return;
+    setStatus('Could not reach the online library. Check your internet connection'+(sampleFn?', or open Musisc from its GitHub link (al3nafk.github.io/musisc), where search always works':'')+'.','err');
+  }
+}
+async function openOnline(id, btn){
+  setStatus('<span class="spin"></span><span>Opening the sheet music…</span>');
+  try{
+    const r=await fetch(`${TS}/tunes/${id}?format=json`); if(!r.ok) throw new Error('HTTP '+r.status);
+    const t=await r.json(); const st=(t.settings||[])[0];
+    if(!st) throw new Error('this tune has no notation yet.');
+    const abc=sessionAbc(t, st);
+    loadAbc(abc); saveSong(abc); showView('score');
+    document.querySelectorAll('#findResults .hit').forEach(b=>b.removeAttribute('aria-current')); if(btn) btn.setAttribute('aria-current','true');
+    setStatus(`Opened "${esc(t.name)}" and saved it to My songs, so it also works offline.`);
+  }catch(e){ setStatus('Could not open that tune: '+esc(e.message),'err'); }
+}
+$('#findForm').onsubmit=e=>{ e.preventDefault(); const q=$('#findIn').value.trim(); if(q) searchOnline(q); };
+$('#findIn').oninput=findFoot;
+$('#findResults').onclick=e=>{ const b=e.target.closest('.hit'); if(b) openOnline(b.dataset.id, b); };
+addEventListener('online',findFoot); addEventListener('offline',findFoot);
+if(OFFLINE) $('#find').hidden=true; else findFoot();
+
 /* ---------- PDF ---------- */
 function loadScript(src){ return new Promise((ok,bad)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>bad(new Error('load')); document.head.appendChild(s); }); }
 async function pdfLib(){
