@@ -198,7 +198,7 @@ function beatUnit(){ return {1:'whole',2:'half',4:'quarter',8:'eighth',16:'sixte
 function setStatus(html, kind){ const s=$('#status'); if(!html){s.hidden=true;return;} s.hidden=false; s.className='status'+(kind?' '+kind:''); s.innerHTML=html; }
 
 function loadAbc(abc){
-  stopDemo();
+  stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
   const out=ABCJS.renderAbc('score', abc, {add_classes:true, responsive:'resize', staffwidth:760,
     wrap:{minSpacing:1.8,maxSpacing:2.7,preferredMeasuresPerLine:4}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
   const v=out&&out[0];
@@ -446,7 +446,7 @@ function startDemo(from=firstNoteIndex()){
   const tick=()=>{
     if(!play) return;
     const now=ctx.currentTime;
-    if(now>=play.endT){ stopDemo(); return; }
+    if(now>=play.endT){ resumeIdx=null; stopDemo(); return; }
     const ms=(now-play.t0)*1000*play.sp+play.base;
     rollHead=rollTarget=Math.max(play.base,ms);
     let j=play.idx;
@@ -456,6 +456,9 @@ function startDemo(from=firstNoteIndex()){
   };
   play.raf=requestAnimationFrame(tick);
 }
+let resumeIdx=null; // where Play continues after a pause
+function pauseDemo(){ if(!play) return; resumeIdx=Math.max(0,play.idx); stopDemo(); goTo(resumeIdx,false); setPlayBtn(false); }
+function playOrResume(){ if(play) return pauseDemo(); const from=resumeIdx!=null?resumeIdx:firstNoteIndex(); resumeIdx=null; startDemo(from); }
 function stopDemo(){
   if(!play) return;
   cancelAnimationFrame(play.raf);
@@ -463,12 +466,19 @@ function stopDemo(){
   play=null; setPlayBtn(false);
   $('#lessonMode').textContent='Learn note by note';
 }
+const ICON_PAUSE='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>';
+const ICON_PLAY='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>';
 function setPlayBtn(on){
-  $('#playBtn').innerHTML= on ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg><span>Stop</span>'
-                              : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Play demo</span>';
+  const paused=!on&&resumeIdx!=null;
+  $('#playBtn').innerHTML=on?ICON_PAUSE+'<span>Pause</span>':ICON_PLAY+'<span>'+(paused?'Resume':'Play demo')+'</span>';
+  // the same control in the bottom bar, always on screen while you scroll the score
+  const d=$('#dockPlay'); if(d){ d.innerHTML=on?ICON_PAUSE+'<span>Pause</span>':ICON_PLAY+'<span>'+(paused?'Resume':'Play')+'</span>'; d.setAttribute('aria-pressed',String(on)); d.title=on?'Pause the demo (Space)':'Play the demo (Space)'; }
+  const b=$('#dockRestart'); if(b) b.hidden=!on&&!paused;
 }
-$('#playBtn').onclick=()=> play?stopDemo():startDemo();
-$('#fromHereBtn').onclick=()=> startDemo(cur);
+$('#playBtn').onclick=playOrResume;
+$('#dockPlay').onclick=playOrResume;
+$('#dockRestart').onclick=()=>{ resumeIdx=null; startDemo(firstNoteIndex()); };
+$('#fromHereBtn').onclick=()=>{ resumeIdx=null; startDemo(cur); };
 $('#speed').oninput=()=>setSpeed(+$('#speed').value/100,'slider');
 $('#bpmIn').onchange=()=>{
   const b=parseFloat($('#bpmIn').value);
