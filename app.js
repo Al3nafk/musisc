@@ -231,17 +231,48 @@ function beatUnit(){ return {1:'whole',2:'half',4:'quarter',8:'eighth',16:'sixte
 /* ---------- loading ---------- */
 function setStatus(html, kind){ const s=$('#status'); if(!html){s.hidden=true;return;} s.hidden=false; s.className='status'+(kind?' '+kind:''); s.innerHTML=html; }
 
-// Number every bar (small figure above each bar line) unless the notation already sets its own numbering.
+// Number the first bar of every row (abcjs "barnumbers 0") unless the notation already sets its own numbering.
 function withBarNumbers(abc){
   if(/^%%(barnumbers|measurenb)\b/m.test(abc)) return abc;
-  return /^X:.*$/m.test(abc) ? abc.replace(/^(X:.*)$/m,'$1\n%%barnumbers 1') : '%%barnumbers 1\n'+abc;
+  return /^X:.*$/m.test(abc) ? abc.replace(/^(X:.*)$/m,'$1\n%%barnumbers 0') : '%%barnumbers 0\n'+abc;
+}
+// Phones: draw the score at the screen's own width with fewer bars per row, so notes stay big
+// enough to read instead of a desktop-width score shrunk to fit.
+let lastLayout='';
+function scoreLayout(){
+  const w=($('#score')&&$('#score').clientWidth)||760;
+  const bars=w<430?2:w<640?3:4, width=Math.round(Math.max(300,Math.min(760,w-8)));
+  return {bars, width, key:bars+':'+(w<640?Math.round(width/40):'w')};
+}
+let relayoutT=0;
+addEventListener('resize',()=>{ clearTimeout(relayoutT); relayoutT=setTimeout(()=>{
+  if(!vis||play||(typeof MIC!=='undefined'&&MIC.on)||!$('#score').clientWidth) return;
+  if(scoreLayout().key===lastLayout) return;
+  const at=cur, sp=speedF;
+  try{ loadAbc($('#abcText').value); setSpeed(sp,'load'); if(events[at]) goTo(at,false); }catch(e){}
+},300); });
+// abcjs's automatic line wrapping numbers every bar even when asked for row starts only,
+// so keep just the number at the left edge of each row and drop the rest.
+function trimBarNumbers(){
+  const rows={};
+  document.querySelectorAll('#score .abcjs-bar-number').forEach(el=>{
+    const row=[...el.classList].find(c=>/^abcjs-l\d+$/.test(c))||'x';
+    const x=parseFloat(el.getAttribute('x'));
+    (rows[row]=rows[row]||[]).push({el, x:isNaN(x)?el.getBBox().x:x});
+  });
+  Object.values(rows).forEach(list=>{
+    list.sort((a,b)=>a.x-b.x);
+    list.forEach((n,i)=>{ if(i>0||n.x>60) n.el.remove(); });
+  });
 }
 function loadAbc(abc){
   stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
-  const out=ABCJS.renderAbc('score', withBarNumbers(abc), {add_classes:true, responsive:'resize', staffwidth:760,
-    wrap:{minSpacing:1.8,maxSpacing:2.7,preferredMeasuresPerLine:4}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
+  const L=scoreLayout(); lastLayout=L.key;
+  const out=ABCJS.renderAbc('score', withBarNumbers(abc), {add_classes:true, responsive:'resize', staffwidth:L.width,
+    wrap:{minSpacing:1.8,maxSpacing:2.7,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
   const v=out&&out[0];
   if(!v||!v.lines||!v.lines.some(l=>l.staff)) throw new Error('No music found in that notation.');
+  trimBarNumbers();
   const hasTempo=!!(v.metaText&&v.metaText.tempo);
   try{ v.setUpAudio(hasTempo?{}:{qpm:100}); }catch(e){}
   const timer=new ABCJS.TimingCallbacks(v, hasTempo?{}:{qpm:100});
@@ -788,7 +819,7 @@ function rollLoop(){
 }
 function setRoll(on){
   rollOn=on; roll.hidden=!on;
-  $('#rollBtn').textContent=on?'Hide falling notes':'Show falling notes';
+  $('#rollBtn').innerHTML=(on?'Hide':'Show')+' <span class="opt">falling </span>notes';
   $('#rollBtn').setAttribute('aria-pressed',String(on));
   try{ localStorage.setItem('smc.roll',on?'1':'0'); }catch(e){}
   if(on) requestAnimationFrame(measureKeys);
