@@ -285,7 +285,7 @@ let pointerDown=false;
 $('#kb').addEventListener('pointerdown',e=>{
   const k=e.target.closest('[data-midi]'); if(!k) return;
   e.preventDefault();
-  const m=+k.dataset.midi; hear([m],.9); onKeyPlayed(m);
+  const m=+k.dataset.midi; hear([m],pedalMode==='off'?.9:2.6); onKeyPlayed(m);
 });
 
 function onKeyPlayed(m){
@@ -421,6 +421,14 @@ function onNoteClick(abcelem){
 /* ---------- demo playback ---------- */
 function speed(){ return speedF; }
 // one speed value drives the slider, the % label and the BPM box
+let pedalMode=(()=>{ try{ return localStorage.getItem('smc.pedal')||'off'; }catch(e){ return 'off'; } })();
+function setPedal(mode){
+  pedalMode=['off','bar','half'].includes(mode)?mode:'off';
+  try{ localStorage.setItem('smc.pedal',pedalMode); }catch(e){}
+  const sel=$('#pedalSel'); if(sel) sel.value=pedalMode;
+  const lbl=$('#pedalLbl'); if(lbl) lbl.classList.toggle('on',pedalMode!=='off');
+  if(play){ const i=Math.max(play.idx,0); startDemo(i); } // hear the change straight away
+}
 function setSpeed(f, from){
   speedF=Math.max(.05,Math.min(10,f));
   if(from!=='slider') $('#speed').value=String(Math.round(Math.max(40,Math.min(150,speedF*100))/5)*5);
@@ -434,10 +442,19 @@ function startDemo(from=firstNoteIndex()){
   stopDemo(); audio();
   const sp=speed(), bus=ctx.createGain(); bus.connect(master);
   const t0=ctx.currentTime+.15, base=events[from].ms;
+  // sustain pedal: each note rings on until the next pedal change (every bar or half bar), and a key
+  // struck again cuts its own earlier ringing, as the damper does on a real piano
+  const win=pedalMode==='bar'?msPerMeasure:pedalMode==='half'?msPerMeasure/2:0, list=[];
   for(let i=from;i<events.length;i++){
-    const ev=events[i], at=t0+(ev.ms-base)/1000/sp;
-    ev.pitches.forEach(p=>tone(p.midi,at,Math.max(.1,p.ms/1000/sp-.02),bus,.35+.4*(p.vol/127)));
+    const ev=events[i];
+    ev.pitches.forEach(p=>{
+      let endMs=ev.ms+Math.max(100,p.ms-20);
+      if(win>0){ const change=(Math.floor((ev.ms+1)/win)+1)*win-30; endMs=Math.max(endMs,change); }
+      list.push({midi:p.midi,start:ev.ms,end:endMs,vel:.35+.4*(p.vol/127)});
+    });
   }
+  if(win>0){ const last={}; list.slice().sort((a,b)=>a.start-b.start).forEach(n=>{ const prev=last[n.midi]; if(prev&&prev.end>n.start) prev.end=Math.max(prev.start+60,n.start-10); last[n.midi]=n; }); }
+  list.forEach(n=>tone(n.midi,t0+(n.start-base)/1000/sp,Math.max(.1,(n.end-n.start)/1000/sp),bus,n.vel));
   const last=events[events.length-1];
   const endT=t0+((last.ms-base)+last.gap)/1000/sp+.3;
   play={bus,t0,base,sp,idx:from-1,endT,raf:0};
@@ -480,6 +497,8 @@ $('#dockPlay').onclick=playOrResume;
 $('#dockRestart').onclick=()=>{ resumeIdx=null; startDemo(firstNoteIndex()); };
 $('#fromHereBtn').onclick=()=>{ resumeIdx=null; startDemo(cur); };
 $('#speed').oninput=()=>setSpeed(+$('#speed').value/100,'slider');
+$('#pedalSel').onchange=e=>setPedal(e.target.value);
+setPedal(pedalMode);
 $('#bpmIn').onchange=()=>{
   const b=parseFloat($('#bpmIn').value);
   if(!(b>0)){ $('#bpmIn').value=String(Math.round(tuneBpm*speedF)); return; }

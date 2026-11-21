@@ -100,6 +100,10 @@ select.btn{padding-right:10px}
 .speed input{width:110px;accent-color:var(--accent)}
 .speed #speedOut{min-width:3.2em}
 .bpm{display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted)}
+.pedal{display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted)}
+.pedal svg{width:16px;height:16px}
+.pedal select{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
+.pedal.on{color:var(--accent)} .pedal.on select{border-color:var(--accent)}
 .bpm input{width:4.6em;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
 .bpm input:focus{border-color:var(--accent);outline:none}
 .view{padding:10px 14px 16px}
@@ -257,6 +261,9 @@ select.btn{padding-right:10px}
           <button class="btn" id="fromHereBtn" type="button" title="Play from the current note">From here</button>
           <label class="speed" for="speed">Speed <input id="speed" type="range" min="40" max="150" step="5" value="100"><span id="speedOut">100%</span></label>
           <label class="bpm" for="bpmIn" title="Type a tempo in beats per minute, then press Enter">Tempo <input id="bpmIn" type="number" min="20" max="300" step="1" inputmode="numeric" value="100"> BPM</label>
+          <label class="pedal" id="pedalLbl" for="pedalSel" title="Sustain pedal: notes keep ringing until the pedal changes">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 20h10l2-6H5z"/><path d="M12 14V4"/></svg> Pedal
+            <select id="pedalSel"><option value="off">Off</option><option value="bar">On: change each bar</option><option value="half">On: change each half bar</option></select></label>
           <button class="btn" id="micBtn" type="button" title="Play on your own piano: Musisc listens and guides you">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Practice with mic</button>
         </div>
