@@ -547,6 +547,7 @@ async function handleImage(file){
   if(!file.type.startsWith('image/')){ setStatus('Please use an image (JPG, PNG, WebP or GIF). For a PDF, take a screenshot of the page.','err'); return; }
   const url=URL.createObjectURL(file);
   $('#orig').innerHTML=`<img alt="Your original sheet music" src="${url}">`; $('#tab-orig').hidden=false;
+  if(!sampleFn&&OMR_HERE) return offlineRead([file], file.name);
   const text=await askClaude(PROMPT,{images:[file]},'Reading your sheet music… this can take up to a minute');
   finishAbc(text);
 }
@@ -704,20 +705,21 @@ $('#applyBtn').onclick=()=>{
   catch(e){ $('#applyMsg').textContent=e.message+' Check the notation for typos.'; }
 };
 
-/* ---------- online search: three free, legal libraries ----------
+/* ---------- online search: four free, legal libraries ----------
    Mutopia Project piano scores (public domain / Creative Commons MIDI, mirrored on the Musisc site),
+   OpenScore Lieder songs for voice and piano (CC0, converted to .mxl with MuseScore, mirrored too),
    Wikimedia Commons MIDI files (searched live), and The Session folk tunes (ABC, searched live). */
 const TS='https://thesession.org', WM='https://commons.wikimedia.org/w/api.php';
 const LIB=(/github\.io$/.test(location.hostname)||location.protocol==='http:')?'library/':'https://al3nafk.github.io/musisc/library/';
 const TS_METER={reel:'4/4',hornpipe:'4/4',barndance:'4/4',strathspey:'4/4',march:'4/4',jig:'6/8','slip jig':'9/8',slide:'12/8',polka:'2/4',waltz:'3/4',mazurka:'3/4','three-two':'3/2'};
 const TS_MODE={major:'maj',minor:'min',dorian:'dor',mixolydian:'mix',lydian:'lyd',phrygian:'phr',locrian:'loc'};
 const PER=12;
-let findQ='', findGen=0, mutopia=null;
+let findQ='', findGen=0, mutopia=null, openscore=null;
 function findFoot(){
   const q=$('#findIn').value.trim();
   const imslp='https://imslp.org/index.php?title=Special:Search&search='+encodeURIComponent(q||'piano');
   $('#findFoot').innerHTML=navigator.onLine
-    ? `Searches <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia</a> piano scores, <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="${TS}" target="_blank" rel="noopener">The Session</a>: about 28,000 free pieces. Still not there? <a href="${imslp}" target="_blank" rel="noopener">Search IMSLP</a> and drop the PDF in.`
+    ? `Searches <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia</a> piano scores, <a href="https://github.com/OpenScore/Lieder" target="_blank" rel="noopener">OpenScore</a> songs, <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="${TS}" target="_blank" rel="noopener">The Session</a>: about 30,000 free pieces. Still not there? <a href="${imslp}" target="_blank" rel="noopener">Search IMSLP</a> and drop the PDF in.`
     : 'You are offline. Search needs an internet connection; your saved songs still open from the menu above.';
   $('#findBtn').disabled=!navigator.onLine;
 }
@@ -731,7 +733,7 @@ const SOURCES={
   mutopia:{
     name:'Piano scores', note:'Mutopia Project',
     async search(q,page){
-      if(!mutopia){ const r=await fetch(LIB+'mutopia.json'); if(!r.ok) throw new Error('HTTP '+r.status); mutopia=await r.json(); mutopia.forEach(m=>m._k=fold([m.t,m.by,m.o,m.i,m.s].join(' '))); }
+      if(!mutopia){ const r=await fetch(LIB+'mutopia.json',{cache:'no-cache'}); if(!r.ok) throw new Error('HTTP '+r.status); mutopia=await r.json(); mutopia.forEach(m=>m._k=fold([m.t,m.by,m.o,m.i,m.s].join(' '))); }
       const w=words(q), fq=fold(q);
       const hits=mutopia.filter(m=>w.every(x=>m._k.includes(x)))
         .map(m=>({m,score:(fold(m.t).includes(fq)?2:0)+(m.i==='Piano'?1:0)})).sort((a,b)=>b.score-a.score).map(x=>x.m);
@@ -742,6 +744,22 @@ const SOURCES={
       const r=await fetch(LIB+'mutopia/'+key); if(!r.ok) throw new Error('HTTP '+r.status);
       const abc=midiToAbc(await r.arrayBuffer(), m.t);
       return {title:m.t, abc:retitle(abc,m.t,[`C:${m.by}`,`N:From the Mutopia Project (mutopiaproject.org, piece ${m.id}), ${m.l}`])};
+    }
+  },
+  openscore:{
+    name:'Songs with piano', note:'OpenScore Lieder',
+    async search(q,page){
+      if(!openscore){ const r=await fetch(LIB+'openscore.json',{cache:'no-cache'}); if(!r.ok) throw new Error('HTTP '+r.status); openscore=await r.json(); openscore.forEach(m=>m._k=fold([m.t,m.by,m.a,m.set,m.i].join(' '))); }
+      const w=words(q), fq=fold(q);
+      const hits=openscore.filter(m=>w.every(x=>m._k.includes(x)))
+        .map(m=>({m,score:fold(m.t).includes(fq)?1:0})).sort((a,b)=>b.score-a.score).map(x=>x.m);
+      return {total:hits.length, more:hits.length>page*PER, items:hits.slice((page-1)*PER,page*PER).map(m=>({key:m.f,title:m.t,sub:m.by+(m.set?` · ${m.set}`:'')}))};
+    },
+    async open(key){
+      const m=openscore.find(x=>x.f===key);
+      const r=await fetch(LIB+'openscore/'+key); if(!r.ok) throw new Error('HTTP '+r.status);
+      const abc=musicXmlToAbc(await unzipMusicXml(await r.arrayBuffer()));
+      return {title:m.t, abc:retitle(abc,m.t,[`C:${m.by}`,`N:From OpenScore Lieder (github.com/OpenScore/Lieder), CC0 public domain`].filter(x=>!(x.startsWith('C:')&&/^C:/m.test(abc))))};
     }
   },
   commons:{
@@ -826,19 +844,20 @@ if(OFFLINE) $('#find').hidden=true; else findFoot();
 function loadScript(src){ return new Promise((ok,bad)=>{ const s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=()=>bad(new Error('load')); document.head.appendChild(s); }); }
 async function pdfLib(){
   if(window.pdfjsLib&&window.pdfjsWorker) return window.pdfjsLib;
-  const base='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  const base=OMR_HERE?OMR_BASE+'runtime/pdfjs/':'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
   if(!window.pdfjsLib) await loadScript(base+'pdf.min.js');
   if(!window.pdfjsWorker) await loadScript(base+'pdf.worker.min.js'); // runs the PDF engine on the page itself
   return window.pdfjsLib;
 }
 async function handlePdf(file){
-  if(!sampleFn||!imgLimits){ setStatus(OFFLINE?'Reading PDFs needs internet. Open the online Musisc on claude.ai to read it, then make a new offline copy.':'Reading PDFs needs the app opened on claude.ai.','err'); return; }
+  const local=!(sampleFn&&imgLimits)&&OMR_HERE;
+  if(!local&&(!sampleFn||!imgLimits)){ setStatus(OFFLINE?'Reading PDFs needs internet. Open the online Musisc on claude.ai to read it, then make a new offline copy.':'Reading PDFs needs the app opened on claude.ai.','err'); return; }
   setStatus('<span class="spin"></span><span>Opening your PDF…</span>');
   let lib;
   try{ lib=await pdfLib(); }catch(e){ setStatus('Could not load the PDF reader. Check your internet connection and try again.','err'); return; }
   try{
     const pdf=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;
-    const max=Math.min(pdf.numPages, imgLimits.maxCount||4, 6);
+    const max=local?Math.min(pdf.numPages,10):Math.min(pdf.numPages, imgLimits.maxCount||4, 6);
     const blobs=[], urls=[];
     for(let i=1;i<=max;i++){
       setStatus(`<span class="spin"></span><span>Preparing page ${i} of ${max}…</span>`);
@@ -851,12 +870,105 @@ async function handlePdf(file){
     }
     $('#orig').innerHTML=urls.map((u,i)=>`<img alt="Page ${i+1} of your PDF" src="${u}" style="margin-bottom:12px">`).join('');
     $('#tab-orig').hidden=false;
+    if(local) return offlineRead(blobs, file.name);
     const note=pdf.numPages>max?` Only the first ${max} of ${pdf.numPages} pages are read.`:'';
     const prompt=(blobs.length>1?`The ${blobs.length} images are consecutive pages of one piece, in order. Transcribe them as one continuous tune.\n`:'')+PROMPT;
     const text=await askClaude(prompt,{images:blobs},`Reading ${blobs.length>1?blobs.length+' pages':'your PDF'}… this can take a minute or two.${note}`);
     finishAbc(text);
   }catch(e){ setStatus('That PDF could not be opened. If it is password-protected, remove the password or take a screenshot of the page instead.','err'); }
 }
+
+/* ---------- offline reader: photos and PDFs read on this device ----------
+   homr (github.com/liebharc/homr, AGPL-3.0) runs in a worker through Pyodide + onnxruntime-web.
+   Its files (~195 MB) are downloaded once into the browser cache, then reading works with no internet.
+   Only where the files are served from the same site (the GitHub Pages app); claude.ai uses Claude instead. */
+const OMR_HERE=!OFFLINE&&typeof Worker!=='undefined'&&typeof OffscreenCanvas!=='undefined'&&'caches' in window
+  &&(location.protocol==='http:'||/github\.io$/.test(location.hostname));
+const OMR_BASE='library/omr/';
+let omrMan=null, omrWorker=null, omrSeq=0; const omrJobs={};
+async function omrManifest(){
+  if(omrMan) return omrMan;
+  const r=await fetch(OMR_BASE+'manifest.json',{cache:'no-cache'}).catch(()=>caches.match(OMR_BASE+'manifest.json'));
+  if(!r||!r.ok) throw new Error('offline reader files not found');
+  return omrMan=await r.json();
+}
+const omrCacheName=m=>'musisc-omr-'+m.version;
+async function omrMissing(){
+  const m=await omrManifest(), c=await caches.open(omrCacheName(m));
+  const miss=[]; for(const f of m.files) if(!(await c.match(OMR_BASE+f.f))) miss.push(f);
+  return miss;
+}
+async function omrDownload(onProgress){
+  const m=await omrManifest(), c=await caches.open(omrCacheName(m));
+  try{ await navigator.storage?.persist?.(); }catch(e){}
+  for(const k of await caches.keys()) if(k.startsWith('musisc-omr-')&&k!==omrCacheName(m)) await caches.delete(k);
+  const miss=await omrMissing(), total=miss.reduce((a,f)=>a+f.size,0); let done=0;
+  const man=await fetch(OMR_BASE+'manifest.json',{cache:'no-cache'}); await c.put(OMR_BASE+'manifest.json',man);
+  for(const f of miss){
+    const r=await fetch(OMR_BASE+f.f,{cache:'no-cache'}); if(!r.ok) throw new Error('download failed: '+f.f);
+    const reader=r.body.getReader(), parts=[];
+    for(;;){ const {done:end,value}=await reader.read(); if(end) break; parts.push(value); done+=value.length; onProgress(done,total); }
+    await c.put(OMR_BASE+f.f,new Response(new Blob(parts),{headers:{'Content-Type':r.headers.get('Content-Type')||'application/octet-stream'}}));
+  }
+}
+function omrRead(pages, onProgress){
+  if(!omrWorker){
+    omrWorker=new Worker(OMR_BASE+'omr-worker.js',{type:'module'});
+    omrWorker.onmessage=e=>{ const m=e.data, job=omrJobs[m.id]; if(!job) return;
+      if(m.type==='progress') job.progress(m);
+      else { delete omrJobs[m.id]; m.type==='done'?job.ok(m.xml):job.bad(new Error(m.message)); } };
+    omrWorker.onerror=e=>{ for(const k in omrJobs){ omrJobs[k].bad(new Error(e.message||'the reader stopped')); delete omrJobs[k]; } omrWorker=null; };
+  }
+  return new Promise((ok,bad)=>{ const id=++omrSeq; omrJobs[id]={ok,bad,progress:onProgress}; omrWorker.postMessage({type:'read',id,pages}); });
+}
+const mb=n=>Math.round(n/1048576);
+function askToDownload(size){
+  return new Promise(res=>{
+    setStatus(`Reading sheet music on this device needs a one-time download of about ${mb(size)} MB. After that it works even with no internet. <button class="btn primary" type="button" id="omrYes">Download</button> <button class="btn" type="button" id="omrNo">Not now</button>`);
+    $('#omrYes').onclick=()=>res(true); $('#omrNo').onclick=()=>{ setStatus(''); res(false); };
+  });
+}
+async function ensureOmr(ask=true){
+  let miss;
+  try{ miss=await omrMissing(); }catch(e){ setStatus('The offline reader could not be found. Connect to the internet and reload Musisc once.','err'); return false; }
+  if(!miss.length) return true;
+  if(!navigator.onLine){ setStatus('Reading photos offline needs a one-time download first. Connect to the internet once and open a photo, or press "Offline reading" above.','err'); return false; }
+  if(ask&&!(await askToDownload(miss.reduce((a,f)=>a+f.size,0)))) return false;
+  try{
+    await omrDownload((d,t)=>setStatus(`<span class="spin"></span><span>Downloading the offline reader… ${mb(d)} of ${mb(t)} MB</span>`));
+    updateOmrBtn(); return true;
+  }catch(e){ setStatus('The download stopped: '+esc(e.message)+'. Check your connection and try again.','err'); return false; }
+}
+async function offlineRead(blobs, name){
+  if(!(await ensureOmr())) return;
+  const t0=Date.now();
+  setStatus('<span class="spin"></span><span>Reading your sheet music on this device… the first time can take a few minutes. Keep this tab open.</span>');
+  try{
+    const pages=await Promise.all(blobs.map(async b=>new Uint8Array(await b.arrayBuffer())));
+    const xml=await omrRead(pages, m=>setStatus(`<span class="spin"></span><span>${esc(m.text)}${m.pct!=null?` (${m.pct}%)`:''} Keep this tab open.</span>`));
+    let abc=musicXmlToAbc(xml);
+    if(/^T:\s*(Untitled)?\s*$/m.test(abc)) abc=retitle(abc, sheetName(name)); // homr does not read titles
+    loadAbc(abc); saveSong(abc); showView('score');
+    setStatus(`Read on this device in ${Math.round((Date.now()-t0)/1000)} s and saved to My songs. Offline reading can get some notes wrong: compare with the Original tab, and fix any mistakes in the Notation tab.`);
+  }catch(e){ setStatus('Could not read that sheet music: '+esc(e.message||'unknown error')+'. Try a sharper, flatter photo with the whole page in view.','err'); }
+}
+function sheetName(file){
+  const n=String(file||'').replace(/\.[a-z0-9]+$/i,'').replace(/[_-]+/g,' ').trim();
+  return (!n||/^(img|pxl|dsc|dcim|image|photo|scan|screenshot|whatsapp)\b/i.test(n)||/^\d[\d ]*$/.test(n))?'Sheet music '+new Date().toLocaleDateString():n;
+}
+async function updateOmrBtn(){
+  const b=$('#omrBtn'); if(!b) return;
+  if(!OMR_HERE||sampleFn){ b.hidden=true; return; }
+  b.hidden=false;
+  try{ const miss=await omrMissing(); b.dataset.ready=miss.length?'':'1';
+    b.lastChild.textContent=miss.length?` Offline reading (${mb(miss.reduce((a,f)=>a+f.size,0))} MB)`:' Offline reading ready';
+    b.title=miss.length?'Download the photo and PDF reader so it works without internet':'Photos and PDFs are read on this device, even offline';
+  }catch(e){ b.hidden=true; }
+}
+if($('#omrBtn')) $('#omrBtn').onclick=async()=>{
+  if($('#omrBtn').dataset.ready){ setStatus('Offline reading is ready: drop in a photo, screenshot or PDF of sheet music, even without internet.'); return; }
+  if(await ensureOmr(false)) setStatus('Offline reading is ready: photos, screenshots and PDFs are now read on this device, even without internet.');
+};
 
 /* ---------- offline import: MusicXML (.musicxml/.xml/.mxl) and MIDI ---------- */
 // Both are turned into ABC notation on this device, so the rest of the app works unchanged.
@@ -1169,6 +1281,7 @@ fillSongs();
 requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 (async()=>{
   if(OFFLINE||!(window.claude&&window.claude.use)){
+    if(OMR_HERE){ $('#intakeHint').textContent='Drop a photo, screenshot or PDF of sheet music anywhere on this page, or press Ctrl+V. It is read on this device, even offline. MusicXML and MIDI files open instantly.'; updateOmrBtn(); return; }
     if(!OFFLINE) $('#intakeHint').innerHTML='To read photos and PDFs, use the <a href="https://claude.ai/artifact/LdkHDji7A11UdAEjTqhjWy" target="_blank" rel="noopener">claude.ai version</a>. Here you can open your saved songs, the samples, and MusicXML, MIDI or ABC files, even offline.';
     return;
   }

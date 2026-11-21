@@ -202,6 +202,8 @@ select.btn{padding-right:10px}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
       Offline copy
     </button>
+    <button class="btn" id="omrBtn" type="button" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M8 20h8M12 16v4"/><path d="M9 9l2 2 4-4"/></svg> Offline reading</button>
     <div class="hint" id="intakeHint">Drop a photo, screenshot or PDF of sheet music anywhere on this page, or press Ctrl+V to paste one. MusicXML and MIDI files open instantly, even offline.</div>
   </section>
   <section class="find" id="find" aria-label="Search sheet music online">
@@ -267,7 +269,9 @@ select.btn{padding-right:10px}
       </div>
     </aside>
   </main>
-  <p class="credit">Piano sound: Fluid R3 GM SoundFont by Frank Wen, via midi-js-soundfonts, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>. Trimmed to every third note.</p>
+  <p class="credit">Piano sound: Fluid R3 GM SoundFont by Frank Wen, via midi-js-soundfonts, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>. Trimmed to every third note.
+  Sheet music library: <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia Project</a> (public domain and Creative Commons), <a href="https://github.com/OpenScore/Lieder" target="_blank" rel="noopener">OpenScore Lieder</a> (CC0), <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="https://thesession.org" target="_blank" rel="noopener">The Session</a>.
+  Offline photo and PDF reading: <a href="https://github.com/liebharc/homr" target="_blank" rel="noopener">homr</a> by Christian Liebhardt and contributors (<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>, source in library/omr/homr.zip), running on Pyodide and ONNX Runtime Web.</p>
 </div></div>
 
 <div class="dock">
