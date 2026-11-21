@@ -116,11 +116,33 @@ function unlockAudio(){
     silentEl=document.createElement('audio'); silentEl.setAttribute('playsinline',''); silentEl.setAttribute('x-webkit-airplay','deny');
     silentEl.preload='auto'; silentEl.loop=false; silentEl.src=silentWav();
   }
+  try{ silentEl.currentTime=0; }catch(e){}
   const p=silentEl.play(); if(p&&p.catch) p.catch(()=>{});
   if(ctx.state==='running') unlocked=true;
 }
-['touchend','click','pointerup','keydown'].forEach(ev=>addEventListener(ev,()=>{ if(!unlocked||!ctx||ctx.state!=='running') unlockAudio(); },{capture:true,passive:true}));
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&ctx&&ctx.state!=='running') ctx.resume().catch(()=>{}); });
+/* iPhone/iPad: after the tab or app has been in the background, Safari often leaves the old
+   audio context "interrupted", or "running" but silent. So the first tap after coming back
+   builds a fresh context inside that tap (the piano samples are kept, nothing reloads). */
+const IOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(/Macintosh/.test(navigator.userAgent)&&navigator.maxTouchPoints>1);
+let wasAway=false;
+function freshAudio(){
+  if(!ctx||(typeof MIC!=='undefined'&&MIC.on)||pianoState==='loading') return;
+  if(play) stopDemo();
+  const old=ctx; ctx=null; master=null; pedalIn=null; unlocked=false;
+  try{ old.close().catch(()=>{}); }catch(e){}
+  if(pianoState==='failed') pianoState='idle';
+  audio();
+}
+['touchend','click','pointerup','keydown'].forEach(ev=>addEventListener(ev,()=>{
+  if(wasAway){ wasAway=false; if(IOS) freshAudio(); }
+  if(!unlocked||!ctx||ctx.state!=='running') unlockAudio();
+},{capture:true,passive:true}));
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ wasAway=true; if(play&&!(typeof MIC!=='undefined'&&MIC.on)) pauseDemo(); return; }
+  unlocked=false;
+  if(ctx&&ctx.state!=='running') ctx.resume().catch(()=>{});
+});
+addEventListener('pageshow',e=>{ if(e.persisted){ wasAway=true; unlocked=false; } });
 function roomImpulse(sec){
   const rate=ctx.sampleRate, len=Math.floor(rate*sec), buf=ctx.createBuffer(2,len,rate);
   for(let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++){ const t=i/len; d[i]=(Math.random()*2-1)*Math.pow(1-t,3.2)*(i<rate*.012?i/(rate*.012):1); } }
@@ -209,9 +231,14 @@ function beatUnit(){ return {1:'whole',2:'half',4:'quarter',8:'eighth',16:'sixte
 /* ---------- loading ---------- */
 function setStatus(html, kind){ const s=$('#status'); if(!html){s.hidden=true;return;} s.hidden=false; s.className='status'+(kind?' '+kind:''); s.innerHTML=html; }
 
+// Number every bar (small figure above each bar line) unless the notation already sets its own numbering.
+function withBarNumbers(abc){
+  if(/^%%(barnumbers|measurenb)\b/m.test(abc)) return abc;
+  return /^X:.*$/m.test(abc) ? abc.replace(/^(X:.*)$/m,'$1\n%%barnumbers 1') : '%%barnumbers 1\n'+abc;
+}
 function loadAbc(abc){
   stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
-  const out=ABCJS.renderAbc('score', abc, {add_classes:true, responsive:'resize', staffwidth:760,
+  const out=ABCJS.renderAbc('score', withBarNumbers(abc), {add_classes:true, responsive:'resize', staffwidth:760,
     wrap:{minSpacing:1.8,maxSpacing:2.7,preferredMeasuresPerLine:4}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
   const v=out&&out[0];
   if(!v||!v.lines||!v.lines.some(l=>l.staff)) throw new Error('No music found in that notation.');
