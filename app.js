@@ -714,6 +714,35 @@ function setPiano(open){
 }
 $('#pianoBtn').onclick=()=>setPiano(!pianoOpen);
 
+/* ---------- choosing the microphone (built-in or another one) ---------- */
+const BUILTIN=/built-?in|internal|integrated|array|macbook|iphone|ipad|front|bottom|default.*(mic|input)|realtek/i;
+function micPref(){ try{ return localStorage.getItem('smc.mic')||''; }catch(e){ return ''; } }
+function setMicPref(id){ try{ id?localStorage.setItem('smc.mic',id):localStorage.removeItem('smc.mic'); }catch(e){} }
+async function openMic(id){
+  const audio={echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+  if(id) audio.deviceId={exact:id};
+  try{ return await navigator.mediaDevices.getUserMedia({audio}); }
+  catch(e){
+    // the remembered mic was unplugged: fall back to the device's default one
+    if(id&&(e.name==='OverconstrainedError'||e.name==='NotFoundError')){ setMicPref(''); delete audio.deviceId; return await navigator.mediaDevices.getUserMedia({audio}); }
+    throw e;
+  }
+}
+async function fillMicList(){
+  const sel=$('#micDev'); if(!sel||!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices) return;
+  let devs=[]; try{ devs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput'&&d.deviceId&&d.deviceId!=='default'&&d.deviceId!=='communications'); }catch(e){}
+  const using=MIC.stream&&MIC.stream.getAudioTracks()[0], usingId=using&&using.getSettings?using.getSettings().deviceId:'';
+  const pref=micPref();
+  sel.innerHTML='<option value="">Device default</option>'+devs.map((d,i)=>{
+    const name=d.label||('Microphone '+(i+1)), builtin=BUILTIN.test(name);
+    return `<option value="${esc(d.deviceId)}">${esc(name.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i,''))}${builtin?' (built-in)':''}</option>`;
+  }).join('');
+  sel.value=pref&&devs.some(d=>d.deviceId===pref)?pref:'';
+  const lbl=$('#micDevLbl'); if(lbl) lbl.hidden=devs.length<1;
+  if(using&&!pref) sel.title='Now using: '+(using.label||'the default microphone');
+}
+if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange',()=>{ if(MIC.on) fillMicList(); });
+
 /* ---------- microphone practice: hears you play and guides you note by note ----------
    Detection: an FFT of the mic signal. A note starts when the level jumps (onset); the spectrum just
    after the onset minus the one just before it is the sound of the newly struck keys, so notes still
@@ -984,7 +1013,7 @@ async function micStart(from=cur){
   stopDemo(); audio();
   try{
     if(!MIC.test){
-      MIC.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      MIC.stream=await openMic(micPref());
       MIC.src=ctx.createMediaStreamSource(MIC.stream);
     } else MIC.src=MIC.test;
   }catch(e){
@@ -992,6 +1021,7 @@ async function micStart(from=cur){
     setStatus(blocked?(sampleFn?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to practice with the mic.':'Musisc needs permission to use the microphone. Allow it in your browser (the icon next to the address), then press Practice with mic again.'):'No microphone was found. Plug one in or use a device with a mic.','err');
     return;
   }
+  if(!MIC.test) fillMicList();
   MIC.an=ctx.createAnalyser(); MIC.an.fftSize=8192; MIC.an.smoothingTimeConstant=0;
   MIC.td=new Float32Array(MIC.an.fftSize); MIC.fd=new Float32Array(MIC.an.frequencyBinCount); MIC.mag=new Float32Array(MIC.an.frequencyBinCount);
   MIC.src.connect(MIC.an);
@@ -1037,6 +1067,7 @@ function micFinish(){
 $('#micBtn').onclick=()=> MIC.on?micStop():micStart(cur>0?cur:firstNoteIndex());
 $('#micStop').onclick=()=>micStop();
 $('#micMode').onchange=()=>{ if(MIC.on){ const from=MIC.stats.from; micStop(true); micStart(from); } };
+$('#micDev').onchange=e=>{ setMicPref(e.target.value); if(MIC.on){ const from=MIC.stats.from; micStop(true); micStart(from); } };
 
 /* ---------- song library ---------- */
 const SAMPLE_NAMES={ode:'Ode to Joy (melody)',ode2:'Ode to Joy (both hands)',twinkle:'Twinkle, Twinkle, Little Star',minuet:'Minuet in G'};

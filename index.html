@@ -109,7 +109,7 @@ select.btn{padding-right:10px}
 #micBtn.active{background:var(--bad);border-color:var(--bad);color:#fff}
 .mic-bar{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);display:grid;gap:8px}
 .mic-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.85rem;color:var(--muted)}
-.mic-top select{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
+.mic-top select{max-width:min(240px,60vw);font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
 .mic-meter{flex:1 1 90px;min-width:70px;height:8px;border-radius:4px;background:var(--line);overflow:hidden}
 .mic-meter i{display:block;height:100%;width:0;background:var(--good);transition:width .08s linear}
 .mic-stats{font-variant-numeric:tabular-nums;display:flex;gap:10px}
@@ -255,6 +255,7 @@ select.btn{padding-right:10px}
               <option value="wait">Wait for me: one note at a time</option>
               <option value="tempo">Play along: keep the tempo</option>
             </select></label>
+            <label for="micDev" id="micDevLbl" hidden>Mic <select id="micDev"><option value="">Device default</option></select></label>
             <span class="mic-meter" title="Microphone level"><i id="micLevel"></i></span>
             <span class="mic-stats" id="micStats"></span>
             <button class="btn mini" id="micStop" type="button">Stop</button>
