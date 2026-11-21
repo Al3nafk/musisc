@@ -89,9 +89,33 @@ function audio(){
     master.connect(verb); verb.connect(wet); wet.connect(comp);
     loadPiano();
   }
-  if(ctx.state==='suspended') ctx.resume();
+  if(ctx.state!=='running') ctx.resume().catch(()=>{}); // also covers Safari's "interrupted" state
   return ctx;
 }
+/* Apple devices: Safari only starts sound from a tap/click (not touchstart), and the
+   ring/silent switch mutes Web Audio unless the page is marked as media playback. */
+let unlocked=false, silentEl=null;
+function silentWav(){
+  const n=4410, b=new ArrayBuffer(44+n*2), v=new DataView(b), w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF'); v.setUint32(4,36+n*2,true); w(8,'WAVEfmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,44100,true); v.setUint32(28,88200,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,n*2,true);
+  return URL.createObjectURL(new Blob([b],{type:'audio/wav'}));
+}
+function unlockAudio(){
+  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+  audio();
+  try{ // play one silent sample inside the gesture: older iOS needs it to really start
+    const s=ctx.createBufferSource(); s.buffer=ctx.createBuffer(1,1,22050); s.connect(ctx.destination); s.start(0);
+  }catch(e){}
+  if(!silentEl){
+    silentEl=document.createElement('audio'); silentEl.setAttribute('playsinline',''); silentEl.setAttribute('x-webkit-airplay','deny');
+    silentEl.preload='auto'; silentEl.loop=false; silentEl.src=silentWav();
+  }
+  const p=silentEl.play(); if(p&&p.catch) p.catch(()=>{});
+  if(ctx.state==='running') unlocked=true;
+}
+['touchend','click','pointerup','keydown'].forEach(ev=>addEventListener(ev,()=>{ if(!unlocked||!ctx||ctx.state!=='running') unlockAudio(); },{capture:true,passive:true}));
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&ctx&&ctx.state!=='running') ctx.resume().catch(()=>{}); });
 function roomImpulse(sec){
   const rate=ctx.sampleRate, len=Math.floor(rate*sec), buf=ctx.createBuffer(2,len,rate);
   for(let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++){ const t=i/len; d[i]=(Math.random()*2-1)*Math.pow(1-t,3.2)*(i<rate*.012?i/(rate*.012):1); } }
@@ -680,19 +704,77 @@ $('#applyBtn').onclick=()=>{
   catch(e){ $('#applyMsg').textContent=e.message+' Check the notation for typos.'; }
 };
 
-/* ---------- online search (The Session: free tune library with ABC notation) ---------- */
-const TS='https://thesession.org';
+/* ---------- online search: three free, legal libraries ----------
+   Mutopia Project piano scores (public domain / Creative Commons MIDI, mirrored on the Musisc site),
+   Wikimedia Commons MIDI files (searched live), and The Session folk tunes (ABC, searched live). */
+const TS='https://thesession.org', WM='https://commons.wikimedia.org/w/api.php';
+const LIB=(/github\.io$/.test(location.hostname)||location.protocol==='http:')?'library/':'https://al3nafk.github.io/musisc/library/';
 const TS_METER={reel:'4/4',hornpipe:'4/4',barndance:'4/4',strathspey:'4/4',march:'4/4',jig:'6/8','slip jig':'9/8',slide:'12/8',polka:'2/4',waltz:'3/4',mazurka:'3/4','three-two':'3/2'};
 const TS_MODE={major:'maj',minor:'min',dorian:'dor',mixolydian:'mix',lydian:'lyd',phrygian:'phr',locrian:'loc'};
-let findQ='', findPage=1, findCtl=null;
+const PER=12;
+let findQ='', findGen=0, mutopia=null;
 function findFoot(){
   const q=$('#findIn').value.trim();
   const imslp='https://imslp.org/index.php?title=Special:Search&search='+encodeURIComponent(q||'piano');
   $('#findFoot').innerHTML=navigator.onLine
-    ? `Tunes from <a href="${TS}" target="_blank" rel="noopener">The Session</a> open here instantly. For classical piano, <a href="${imslp}" target="_blank" rel="noopener">search IMSLP</a> and drop the PDF in.`
+    ? `Searches <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia</a> piano scores, <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="${TS}" target="_blank" rel="noopener">The Session</a>: about 28,000 free pieces. Still not there? <a href="${imslp}" target="_blank" rel="noopener">Search IMSLP</a> and drop the PDF in.`
     : 'You are offline. Search needs an internet connection; your saved songs still open from the menu above.';
   $('#findBtn').disabled=!navigator.onLine;
 }
+const fold=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const words=q=>fold(q).split(/[^a-z0-9]+/).filter(Boolean);
+function retitle(abc, title, extra){
+  abc=abc.replace(/^T:.*$/m,'T:'+cleanTitle(title));
+  return extra? abc.replace(/^(T:.*)$/m,'$1\n'+extra.map(cleanTitle).join('\n')) : abc;
+}
+const SOURCES={
+  mutopia:{
+    name:'Piano scores', note:'Mutopia Project',
+    async search(q,page){
+      if(!mutopia){ const r=await fetch(LIB+'mutopia.json'); if(!r.ok) throw new Error('HTTP '+r.status); mutopia=await r.json(); mutopia.forEach(m=>m._k=fold([m.t,m.by,m.o,m.i,m.s].join(' '))); }
+      const w=words(q), fq=fold(q);
+      const hits=mutopia.filter(m=>w.every(x=>m._k.includes(x)))
+        .map(m=>({m,score:(fold(m.t).includes(fq)?2:0)+(m.i==='Piano'?1:0)})).sort((a,b)=>b.score-a.score).map(x=>x.m);
+      return {total:hits.length, more:hits.length>page*PER, items:hits.slice((page-1)*PER,page*PER).map(m=>({key:m.f,title:m.t,sub:`${m.by} · ${m.i}`}))};
+    },
+    async open(key){
+      const m=mutopia.find(x=>x.f===key);
+      const r=await fetch(LIB+'mutopia/'+key); if(!r.ok) throw new Error('HTTP '+r.status);
+      const abc=midiToAbc(await r.arrayBuffer(), m.t);
+      return {title:m.t, abc:retitle(abc,m.t,[`C:${m.by}`,`N:From the Mutopia Project (mutopiaproject.org, piece ${m.id}), ${m.l}`])};
+    }
+  },
+  commons:{
+    name:'Wikimedia Commons', note:'free MIDI files',
+    async search(q,page){
+      const u=`${WM}?action=query&format=json&origin=*&list=search&srnamespace=6&srlimit=${PER}&sroffset=${(page-1)*PER}&srinfo=totalhits&srprop=&srsearch=${encodeURIComponent(q+' filemime:audio/midi')}`;
+      const r=await fetch(u); if(!r.ok) throw new Error('HTTP '+r.status); const d=await r.json();
+      const total=(d.query&&d.query.searchinfo&&d.query.searchinfo.totalhits)||0, list=(d.query&&d.query.search)||[];
+      return {total, more:!!d.continue, items:list.map(s=>({key:s.title, title:commonsName(s.title), sub:'MIDI file'}))};
+    },
+    async open(key){
+      const r=await fetch(`${WM}?action=query&format=json&origin=*&prop=imageinfo&iiprop=url&titles=${encodeURIComponent(key)}`); const d=await r.json();
+      const pg=Object.values(d.query.pages)[0], url=pg&&pg.imageinfo&&pg.imageinfo[0].url; if(!url) throw new Error('file not found');
+      const f=await fetch(url.split('?')[0]); if(!f.ok) throw new Error('HTTP '+f.status);
+      const title=commonsName(key);
+      return {title, abc:retitle(midiToAbc(await f.arrayBuffer(), title), title, [`N:From Wikimedia Commons: commons.wikimedia.org/wiki/${key.replace(/ /g,'_')}`])};
+    }
+  },
+  session:{
+    name:'Folk tunes', note:'The Session',
+    async search(q,page){
+      const r=await fetch(`${TS}/tunes/search?q=${encodeURIComponent(q)}&format=json&perpage=${PER}&page=${page}`); if(!r.ok) throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      return {total:d.total||0, more:d.page<d.pages, items:(d.tunes||[]).map(t=>({key:String(+t.id), title:t.name, sub:(t.type||'tune')+(t.alias&&t.alias!==t.name?' · also “'+t.alias+'”':'')}))};
+    },
+    async open(id){
+      const r=await fetch(`${TS}/tunes/${id}?format=json`); if(!r.ok) throw new Error('HTTP '+r.status);
+      const t=await r.json(); const st=(t.settings||[])[0]; if(!st) throw new Error('this tune has no notation yet.');
+      return {title:t.name, abc:sessionAbc(t,st)};
+    }
+  }
+};
+function commonsName(t){ return t.replace(/^File:/,'').replace(/\.(mid|midi|kar)$/i,'').replace(/_/g,' '); }
 function sessionAbc(tune, setting){
   const meter=TS_METER[tune.type]||'4/4', compound=/\/8$/.test(meter);
   const m=/^([A-G][b#]?)(\w+)$/.exec(setting.key||'')||[];
@@ -700,41 +782,43 @@ function sessionAbc(tune, setting){
   const body=String(setting.abc||'').replace(/\r/g,'').replace(/!(?![A-Za-z<>+.()]+!)/g,'\n').replace(/\n{2,}/g,'\n').trim();
   return `X:1\nT:${tune.name}\nC:Traditional (thesession.org/tunes/${tune.id})\nR:${tune.type||''}\nM:${meter}\nL:1/8\nQ:${compound?'3/8=72':'1/4=110'}\nK:${key}\n${body}\n`;
 }
-async function searchOnline(q, page=1){
-  if(!navigator.onLine){ findFoot(); return; }
-  findQ=q; findPage=page; if(findCtl) findCtl.abort(); findCtl=new AbortController();
-  const box=$('#findResults');
-  if(page===1) box.innerHTML='';
-  setStatus('<span class="spin"></span><span>Searching for "'+esc(q)+'"…</span>');
+async function searchSource(id, q, page, gen){
+  const src=SOURCES[id], sec=$(`#findResults [data-src="${id}"]`); if(!sec) return 0;
+  const grid=sec.querySelector('.grid'), head=sec.querySelector('h3 span');
+  const old=sec.querySelector('.more'); if(old) old.remove();
   try{
-    const r=await fetch(`${TS}/tunes/search?q=${encodeURIComponent(q)}&format=json&perpage=12&page=${page}`,{signal:findCtl.signal});
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const d=await r.json();
-    const old=$('#findMore'); if(old) old.remove();
-    if(!d.tunes||!d.tunes.length){ setStatus(page===1?`No sheet music found for "${esc(q)}". Try a shorter name or a different spelling.`:''); return; }
-    box.insertAdjacentHTML('beforeend', d.tunes.map(t=>`<button type="button" class="hit" data-id="${+t.id}" title="${esc(t.name)}"><b>${esc(t.name)}</b><span>${esc(t.type||'tune')}${t.alias&&t.alias!==t.name?' · also “'+esc(t.alias)+'”':''}</span></button>`).join(''));
-    if(d.page<d.pages){ box.insertAdjacentHTML('afterend','<button class="btn" type="button" id="findMore" style="margin-top:8px">More results</button>'); $('#findMore').onclick=()=>searchOnline(findQ, findPage+1); }
-    setStatus(`${d.total} result${d.total==1?'':'s'} for "${esc(q)}". Pick one to open it.`);
-  }catch(e){
-    if(e.name==='AbortError') return;
-    setStatus('Could not reach the online library. Check your internet connection'+(sampleFn?', or open Musisc from its GitHub link (al3nafk.github.io/musisc), where search always works':'')+'.','err');
-  }
+    const res=await src.search(q,page); if(gen!==findGen) return 0;
+    if(!res.items.length&&page===1){ sec.hidden=true; return 0; }
+    head.textContent=`${res.total.toLocaleString()} found · ${src.note}`;
+    grid.insertAdjacentHTML('beforeend',res.items.map(it=>`<button type="button" class="hit" data-src="${id}" data-key="${esc(it.key)}" title="${esc(it.title)}"><b>${esc(it.title)}</b><span>${esc(it.sub)}</span></button>`).join(''));
+    if(res.more){ grid.insertAdjacentHTML('afterend','<button class="btn mini more" type="button">More</button>'); sec.querySelector('.more').onclick=()=>searchSource(id,q,page+1,gen); }
+    return res.total;
+  }catch(e){ if(gen!==findGen) return 0; if(page===1) sec.hidden=true; return -1; }
 }
-async function openOnline(id, btn){
+async function searchOnline(q){
+  if(!navigator.onLine){ findFoot(); return; }
+  findQ=q; const gen=++findGen;
+  $('#findResults').innerHTML=Object.keys(SOURCES).map(id=>`<section data-src="${id}"><h3>${SOURCES[id].name} <span>searching…</span></h3><div class="grid"></div></section>`).join('');
+  setStatus('<span class="spin"></span><span>Searching for "'+esc(q)+'"…</span>');
+  const totals=await Promise.all(Object.keys(SOURCES).map(id=>searchSource(id,q,1,gen)));
+  if(gen!==findGen) return;
+  const found=totals.filter(n=>n>0).reduce((a,b)=>a+b,0);
+  if(found) setStatus(`${found.toLocaleString()} result${found==1?'':'s'} for "${esc(q)}". Pick one to open it.`);
+  else if(totals.every(n=>n<0)) setStatus('Could not reach the online libraries. Check your internet connection'+(sampleFn?', or open Musisc from its GitHub link (al3nafk.github.io/musisc), where search always works':'')+'.','err');
+  else setStatus(`No sheet music found for "${esc(q)}". Try a shorter name, the composer, or a different spelling.`);
+}
+async function openOnline(id, key, btn){
   setStatus('<span class="spin"></span><span>Opening the sheet music…</span>');
   try{
-    const r=await fetch(`${TS}/tunes/${id}?format=json`); if(!r.ok) throw new Error('HTTP '+r.status);
-    const t=await r.json(); const st=(t.settings||[])[0];
-    if(!st) throw new Error('this tune has no notation yet.');
-    const abc=sessionAbc(t, st);
+    const {title, abc}=await SOURCES[id].open(key);
     loadAbc(abc); saveSong(abc); showView('score');
     document.querySelectorAll('#findResults .hit').forEach(b=>b.removeAttribute('aria-current')); if(btn) btn.setAttribute('aria-current','true');
-    setStatus(`Opened "${esc(t.name)}" and saved it to My songs, so it also works offline.`);
-  }catch(e){ setStatus('Could not open that tune: '+esc(e.message),'err'); }
+    setStatus(`Opened "${esc(title)}" and saved it to My songs, so it also works offline.`);
+  }catch(e){ setStatus('Could not open that piece: '+esc(e.message||'unknown error'),'err'); }
 }
 $('#findForm').onsubmit=e=>{ e.preventDefault(); const q=$('#findIn').value.trim(); if(q) searchOnline(q); };
 $('#findIn').oninput=findFoot;
-$('#findResults').onclick=e=>{ const b=e.target.closest('.hit'); if(b) openOnline(b.dataset.id, b); };
+$('#findResults').onclick=e=>{ const b=e.target.closest('.hit'); if(b) openOnline(b.dataset.src, b.dataset.key, b); };
 addEventListener('online',findFoot); addEventListener('offline',findFoot);
 if(OFFLINE) $('#find').hidden=true; else findFoot();
 

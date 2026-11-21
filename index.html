@@ -56,7 +56,12 @@ header{padding-block:18px 10px;display:flex;flex-wrap:wrap;gap:12px 24px;align-i
 .find{margin-top:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
 .find form{display:flex;gap:8px;flex-wrap:wrap}
 .find input{flex:1 1 200px;min-width:0;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit;background:var(--bg);color:inherit}
-.find .results{max-height:min(240px,32vh);overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:10px}
+.find .results{max-height:min(320px,40vh);overflow-y:auto;margin-top:10px}
+.find .results section+section{margin-top:12px}
+.find .results h3{margin:0 0 6px;font-size:.92rem}
+.find .results h3 span{font-weight:400;font-size:.8rem;color:var(--muted)}
+.find .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.find .more{margin-top:6px}
 .find .results:empty{display:none}
 .hit{text-align:left;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--bg);color:inherit;font:inherit;cursor:pointer;min-width:0}
 .hit:hover,.hit:focus-visible{border-color:var(--accent)}

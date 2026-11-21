@@ -1,5 +1,5 @@
 // Musisc service worker: network first, cached copy when offline.
-const CACHE = 'musisc-v2';
+const CACHE = 'musisc-v3';
 const CORE = ['./', './index.html', './app.js', './abcjs-basic-min.js', './piano.json', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
