@@ -134,6 +134,7 @@ async function loadPiano(){
 }
 function tone(midi, when, dur, dest, vel=.6){
   const end=when+Math.max(.12,dur), out=dest||master;
+  if(MIC.on&&!dest?.isMicTest) MIC.ignoreUntil=Math.max(MIC.ignoreUntil,end+0.35);
   const g=ctx.createGain(); g.connect(out);
   const near=Math.min(108,Math.max(21,Math.round(midi/3)*3)), buf=pianoState==='ready'&&pianoBuf[near];
   if(buf){
@@ -288,7 +289,7 @@ $('#kb').addEventListener('pointerdown',e=>{
 });
 
 function onKeyPlayed(m){
-  if(play) return;
+  if(play||MIC.on) return;
   const ev=events[cur], fb=$('#feedback');
   if(!$('#practice').checked||!ev||!ev.pitches.length){ fb.textContent='That key is '+info(m).full+'.'; fb.className='feedback'; return; }
   const targets=ev.pitches.map(p=>p.midi);
@@ -429,6 +430,7 @@ function setSpeed(f, from){
 }
 function startDemo(from=firstNoteIndex()){
   if(!events.length) return;
+  if(MIC.on) micStop();
   stopDemo(); audio();
   const sp=speed(), bus=ctx.createGain(); bus.connect(master);
   const t0=ctx.currentTime+.15, base=events[from].ms;
@@ -711,6 +713,330 @@ function setPiano(open){
   if(open) requestAnimationFrame(measureKeys);
 }
 $('#pianoBtn').onclick=()=>setPiano(!pianoOpen);
+
+/* ---------- microphone practice: hears you play and guides you note by note ----------
+   Detection: an FFT of the mic signal. A note starts when the level jumps (onset); the spectrum just
+   after the onset minus the one just before it is the sound of the newly struck keys, so notes still
+   ringing under the pedal do not count. Each candidate key gets a harmonic-sum score; keys are picked
+   one at a time, removing the partials of each pick, which finds single notes and chords. */
+const MIC={on:false, mode:'wait', stream:null, src:null, an:null, td:null, fd:null, mag:null, hist:[], raf:0,
+  noise:1e-4, rmsHist:[], lastOnset:0, pending:null, ignoreUntil:0, idx:0, tries:0, stats:null, tempo:null, test:null};
+const midiHz=m=>440*Math.pow(2,(m-69)/12);
+function micSalience(mag, m, binHz){
+  const f0=midiHz(m); let s=0;
+  for(let h=1;h<=8;h++){
+    const f=f0*h; if(f>5000) break;
+    const c=f/binHz, w=Math.max(1,c*0.012);           // piano partials run a little sharp: widen with height
+    let best=0; for(let b=Math.floor(c-w);b<=Math.ceil(c+w);b++) if(b>0&&b<mag.length&&mag[b]>best) best=mag[b];
+    s+=best/Math.pow(h,0.6);
+  }
+  return s;
+}
+// returns [{midi, s}] strongest first; lo/hi limit the keys considered
+function micDetect(mag, binHz, maxNotes=4, lo=28, hi=100){
+  mag=Float32Array.from(mag); const found=[];
+  let first=0;
+  for(let n=0;n<maxNotes;n++){
+    let best=-1, bestS=0;
+    for(let m=lo;m<=hi;m++){ if(found.some(f=>f.midi===m)) continue; const s=micSalience(mag,m,binHz); if(s>bestS){ bestS=s; best=m; } }
+    if(best<0) break;
+    // a key an octave below a found note scores from its even partials: prefer the found one
+    if(n===0) first=bestS; else if(bestS<first*0.3) break;
+    found.push({midi:best,s:bestS});
+    const f0=midiHz(best);
+    for(let h=1;h<=12;h++){ const c=f0*h/binHz, w=Math.max(1.5,c*0.015); for(let b=Math.floor(c-w);b<=Math.ceil(c+w);b++) if(b>0&&b<mag.length) mag[b]*=0.15; }
+  }
+  // octave check for the strongest note: if the note an octave up explains it as well, and the
+  // fundamental bin itself is weak, it is probably that higher note
+  return found;
+}
+function micSpectrum(){
+  MIC.an.getFloatFrequencyData(MIC.fd);
+  const mag=MIC.mag; for(let i=0;i<mag.length;i++) mag[i]=Math.pow(10,MIC.fd[i]/20);
+  return Float32Array.from(mag);
+}
+function micRms(){
+  MIC.an.getFloatTimeDomainData(MIC.td);
+  let s=0; const n=1024, o=MIC.td.length-n; for(let i=o;i<MIC.td.length;i++) s+=MIC.td[i]*MIC.td[i];
+  return Math.sqrt(s/n);
+}
+function keyWord(n){ return n===1?'1 key':n+' keys'; }
+function describeMiss(played, target){
+  const d=target-played, p=info(played).full, t=info(target).full;
+  if(d%12===0) return `That was ${p}: the right note, but in another octave. Play the ${t} ${d>0?'higher up':'lower down'} (the glowing key).`;
+  return `That was ${p}. This note is ${t}: ${keyWord(Math.abs(d))} ${d>0?'higher (to the right)':'lower (to the left)'}, counting black keys.`;
+}
+const micSay=(html,cls='')=>{ const m=$('#micMsg'); if(m){ m.innerHTML=html; m.className='mic-msg'+(cls?' '+cls:''); } const fb=$('#feedback'); if(fb){ fb.innerHTML=html; fb.className='feedback'+(cls==='ok'?' good':cls==='bad'?' bad':''); } };
+function micTargets(i){ const ev=events[i]; return ev?ev.pitches.map(p=>p.midi):[]; }
+function nextNoteIdx(i){ for(let j=i;j<events.length;j++) if(events[j].pitches.length) return j; return -1; }
+function barOf(ev){ return Math.max(1,Math.floor((ev.ms+1)/msPerMeasure)+1); }
+function micMark(ev, cls){ (ev.els||[]).forEach(e=>{ if(e&&e.classList){ e.classList.remove('note-ok','note-bad','note-late'); if(cls) e.classList.add(cls); } }); }
+function micClearMarks(){ document.querySelectorAll('#score .note-ok,#score .note-bad,#score .note-late').forEach(e=>e.classList.remove('note-ok','note-bad','note-late')); }
+function promptFor(i){
+  const t=micTargets(i); if(!t.length) return '';
+  const names=t.slice().sort((a,b)=>a-b).map(m=>`<b>${info(m).full}</b>`);
+  return t.length>1?`Play together: ${names.join(' + ')}`:`Play ${names[0]} (${SOLF[info(t[0]).letter]||''}), the glowing key.`;
+}
+
+// ----- judging one struck sound against what the score expects -----
+function peakAt(mag, f, binHz){ const c=f/binHz, w=Math.max(1,c*0.012); let b=0; for(let i=Math.floor(c-w);i<=Math.ceil(c+w);i++) if(i>0&&i<mag.length&&mag[i]>b) b=mag[i]; return b; }
+const ratioK=(hi,lo)=>{ const k=midiHz(hi)/midiHz(lo), kr=Math.round(k); return kr>=2&&kr<=8&&Math.abs(k/kr-1)<0.012?kr:0; };
+// is key t sounding? Its pitch must be clearly stronger than what a lower sounding key's overtone would give
+// there (G4 is also the 4th overtone of G2, so in G2+G4 it must stand out from G2's 3rd and 5th overtones)
+function micPresent(mag, binHz, t, others, top, strict){
+  const sal=micSalience(mag,t,binHz), pk=peakAt(mag,midiHz(t),binHz);
+  let overtone=false;
+  for(const o of others){
+    if(o>=t) continue; const k=ratioK(t,o); if(!k) continue;
+    overtone=true;
+    // a lone low key's overtones fall off smoothly, so its k-th one is about the average of its neighbours
+    const fo=midiHz(o), expect=(peakAt(mag,fo*(k-1),binHz)+peakAt(mag,fo*(k+1),binHz))/2;
+    if(pk<expect*1.3) return false;
+  }
+  if(sal<top*(overtone&&!strict?0.05:0.15)) return false;
+  // a key must sound at its own pitch (or its first overtone): otherwise a higher key's sound, which
+  // lines up with this key's upper overtones, would make it look played (G4 ringing is G2's 4th overtone)
+  let max=0; const lo=Math.floor(50/binHz), hi=Math.min(mag.length,Math.ceil(4000/binHz)); for(let i=lo;i<hi;i++) if(mag[i]>max) max=mag[i];
+  return pk>=0.08*max||(!others.includes(t+12)&&peakAt(mag,2*midiHz(t),binHz)>=0.12*max);
+}
+function bandSum(mag, binHz){ let s=0; const lo=Math.floor(60/binHz), hi=Math.min(mag.length,Math.ceil(4000/binHz)); for(let i=lo;i<hi;i++) s+=mag[i]; return s; }
+function micJudge(fresh, post, targets, binHz, pre){
+  const found=micDetect(fresh, binHz, Math.min(6,targets.length+2));
+  if(!found.length) return {kind:'none'};
+  // little new sound: the same key struck again while it still rings, or just noise. Accept it only
+  // if every wanted key clearly sounds now; never call it a mistake
+  const quiet=post&&bandSum(fresh,binHz)<0.12*bandSum(post,binHz);
+  const check=(mag, f, strict)=>{
+    const top=Math.max(f.length?f[0].s:0, ...targets.map(t=>micSalience(mag,t,binHz)));
+    const others=[...new Set([...targets, ...f.map(x=>x.midi)])];
+    const has=t=>micPresent(mag,binHz,t,others,top,strict)||f.some(x=>Math.abs(x.midi-t)===12&&x.s>=top*0.5);
+    // a key an octave (or other overtone) above another wanted key sounds at the same pitch as that key's
+    // overtone, so it cannot be told apart reliably: if the lower key sounds, give it the benefit of the doubt
+    return t=>has(t)||targets.some(o=>o<t&&ratioK(t,o)&&has(o));
+  };
+  const top=Math.max(found[0].s, ...targets.map(t=>micSalience(fresh,t,binHz)));
+  // a found key that is not wanted and is not just an overtone of a wanted key
+  const maxPk=Math.max(...found.map(f=>peakAt(fresh,midiHz(f.midi),binHz)),1e-12);
+  // ...and that just got louder: a key still ringing under the pedal only fades (or swells a little)
+  const isNew=m=>!pre||!post||peakAt(post,midiHz(m),binHz)>1.3*peakAt(pre,midiHz(m),binHz);
+  const wrong=found.filter(f=>f.s>=top*0.45&&isNew(f.midi)&&peakAt(fresh,midiHz(f.midi),binHz)>=maxPk*0.25&&!targets.includes(f.midi)&&!targets.some(t=>Math.abs(f.midi-t)===12||ratioK(f.midi,t)));
+  // wanted keys may be heard in everything that sounds now (a key struck again while it still rings
+  // cancels out of the "new" spectrum); wrong keys only count if they were just struck
+  const inFresh=check(fresh, found), inPostRaw=post?check(post, micDetect(post,binHz,Math.min(8,targets.length+3)), true):()=>false;
+  const inPost=inPostRaw;
+  if(quiet) return targets.every(inPost)?{kind:'ok'}:{kind:'none'};
+  // right note, wrong octave: an octave up leaves nothing at the wanted pitch; an octave down has a
+  // strong pitch of its own an octave below the wanted one
+  const pf=x=>peakAt(fresh,midiHz(x),binHz);
+  for(const t of targets){
+    // skip while the wanted key was already ringing: striking it again shows up mostly at its overtones
+    if(pre&&peakAt(pre,midiHz(t),binHz)>0.25*Math.max(1e-12,peakAt(post||fresh,midiHz(t),binHz))) continue;
+    for(const up of [12,24]) if(!targets.includes(t+up)&&found[0].midi===t+up&&pf(t)<0.2*pf(t+up)) return {kind:'wrong', played:t+up, missing:[t]};
+    if(!targets.includes(t-12)&&found[0].midi===t-12&&pf(t-12)>pf(t)) return {kind:'wrong', played:t-12, missing:[t]};
+  }
+  const missing=targets.filter(t=>!inFresh(t)&&!inPost(t));
+  if(!missing.length&&!wrong.length) return {kind:'ok'};
+  if(!wrong.length) return {kind:'partial', missing};
+  // name the wrong key in the right octave: a key whose own pitch is weak next to the pitch an octave up
+  // was probably that higher key (its overtones made the lower one look plausible)
+  let w=wrong[0].midi;
+  for(let k=0;k<2&&peakAt(fresh,midiHz(w),binHz)<0.35*peakAt(fresh,midiHz(w+12),binHz);k++) w+=12;
+  return {kind:'wrong', played:w, missing};
+}
+// ----- the listening loop -----
+function micLoop(){
+  if(!MIC.on) return;
+  MIC.raf=requestAnimationFrame(micLoop);
+  micStep(ctx.currentTime);
+}
+// one analysis step at audio time `now` (also driven by the self-test with a simulated mic)
+function micStep(now){
+  const rms=micRms(), raw=micSpectrum();
+  // first ~1 s: learn the room (its level and its noise at each frequency)
+  if(MIC.calib){
+    const c=MIC.calib; c.rms.push(rms); for(let i=0;i<raw.length;i++) c.spec[i]+=raw[i]; c.n++;
+    if(now>=c.until){
+      c.rms.sort((a,b)=>a-b); MIC.noise=Math.max(2e-4,c.rms[Math.floor(c.rms.length*0.6)]||2e-4);
+      MIC.noiseSpec=c.spec.map(v=>v/Math.max(1,c.n)); MIC.calib=null; MIC.lastOnset=now; MIC.rmsHist=[]; MIC.hist=[];
+      if(c.done) c.done();
+    }
+    return;
+  }
+  const ns=MIC.noiseSpec, spec=ns?raw.map((v,i)=>Math.max(0,v-1.6*ns[i])):raw;
+  MIC.hist.push({t:now,spec}); while(MIC.hist.length&&now-MIC.hist[0].t>0.6) MIC.hist.shift();
+  MIC.rmsHist.push({t:now,rms}); while(MIC.rmsHist.length&&now-MIC.rmsHist[0].t>0.25) MIC.rmsHist.shift();
+  const lvl=$('#micLevel'); if(lvl) lvl.style.width=Math.min(100,Math.max(0,(20*Math.log10(rms/MIC.noise+1e-9))*3))+'%';
+  if(MIC.mode==='tempo') tempoTick(now);
+  if(now<MIC.ignoreUntil&&!MIC.sim) return;
+  // onset: a clear rise over the quietest level of the last 0.25 s
+  // a new note: the level rises over the quietest moment of the last 0.25 s, or jumps within 60 ms,
+  // or the spectrum suddenly gains energy (a key struck while others still ring under the pedal)
+  const recentMin=Math.min(...MIC.rmsHist.map(r=>r.rms));
+  const ago=MIC.rmsHist.filter(r=>now-r.t>=0.05).pop(), agoSpec=MIC.hist.filter(h=>now-h.t>=0.05).pop();
+  let flux=0;
+  if(agoSpec){ let up=0, base=1e-9; const a=agoSpec.spec, lo=Math.floor(60/(MIC.an.context.sampleRate/MIC.an.fftSize)), hi=Math.min(spec.length, Math.ceil(4000/(MIC.an.context.sampleRate/MIC.an.fftSize)));
+    for(let i=lo;i<hi;i++){ const d=spec[i]-a[i]; if(d>0) up+=d; base+=a[i]; } flux=up/base; }
+  const rising=rms>recentMin*1.8||(ago&&rms>ago.rms*1.22)||(flux>0.45&&ago&&rms>ago.rms*1.06);
+  if(!MIC.pending&&now-MIC.lastOnset>0.11&&rms>MIC.noise*2.2&&rising){
+    const pre=MIC.hist.find(h=>now-h.t<=0.16)||MIC.hist[0];
+    MIC.lastOnset=now; MIC.pending={t:now, pre:pre.spec, frames:[]};
+  }
+  const p=MIC.pending;
+  if(p){
+    const age=now-p.t;
+    if(age>=0.13) p.frames.push(spec);
+    if(age>=0.24&&p.frames.length){
+      MIC.pending=null;
+      const post=new Float32Array(spec.length); p.frames.forEach(f=>{ for(let i=0;i<f.length;i++) post[i]+=f[i]/p.frames.length; });
+      const fresh=new Float32Array(spec.length); for(let i=0;i<fresh.length;i++) fresh[i]=Math.max(0,post[i]-0.85*p.pre[i]);
+      const binHz=MIC.an.context.sampleRate/MIC.an.fftSize;
+      onHeard(fresh, binHz, p.t, post, p.pre);
+    }
+  }
+}
+function onHeard(fresh, binHz, t, post, pre){
+  if(MIC.mode==='tempo') return tempoHeard(fresh, binHz, t, post, pre);
+  const i=events[cur]&&events[cur].pitches.length?cur:MIC.idx, targets=micTargets(i); if(!targets.length) return;
+  if(i!==MIC.idx){ MIC.idx=i; MIC.tries=0; }
+  const j=micJudge(fresh, post, targets, binHz, pre), ev=events[i];
+  if(j.kind==='none') return;
+  if(j.kind==='ok'){
+    targets.forEach(m=>flash(m,'ok'));
+    if(!MIC.tries) MIC.stats.first++;
+    MIC.stats.done++; micMark(ev, MIC.tries?'note-late':'note-ok');
+    micSay(['Correct!','Yes!','Nice.','Good.'][MIC.stats.done%4]+(targets.length>1?' Chord complete.':''),'ok');
+    MIC.tries=0; micStats();
+    if(MIC.sim) micAdvance(i+1); else setTimeout(()=>{ if(MIC.on&&MIC.mode==='wait') micAdvance(i+1); },260);
+  } else if(j.kind==='partial'){
+    micSay(`Almost: also play ${j.missing.map(m=>`<b>${info(m).full}</b>`).join(' + ')} at the same time.`,'bad');
+    MIC.tries++; MIC.stats.wrong++; micMark(ev,'note-bad'); micStats();
+  } else {
+    flash(j.played,'bad');
+    MIC.tries++; MIC.stats.wrong++; micMark(ev,'note-bad');
+    (MIC.stats.badBars[barOf(ev)]=(MIC.stats.badBars[barOf(ev)]||0)+1);
+    const near=targets.reduce((a,b)=>Math.abs(b-j.played)<Math.abs(a-j.played)?b:a);
+    let msg=describeMiss(j.played, near);
+    if(MIC.tries>=3){ msg+=' Listen: here it is.'; micHint(targets); }
+    micSay(msg,'bad'); micStats();
+  }
+}
+function micHint(targets){ MIC.ignoreUntil=ctx.currentTime+1.6; hear(targets,1); }
+function micAdvance(i){
+  const j=nextNoteIdx(i);
+  if(j<0) return micFinish();
+  MIC.idx=j; MIC.tries=0; goTo(j,false); micSay(promptFor(j));
+}
+function micStats(){
+  const s=MIC.stats, el=$('#micStats'); if(!el||!s) return;
+  el.innerHTML=MIC.mode==='tempo'
+    ?`<span class="g">✓ ${s.first}</span> <span class="y">late/early ${s.late}</span> <span class="r">✗ ${s.wrong+s.missed}</span>`
+    :`<span class="g">✓ ${s.done}</span> <span class="r">✗ ${s.wrong}</span> <span>${s.total-s.done} to go</span>`;
+}
+
+// ----- play-along mode: the score moves at the chosen speed -----
+function tempoStart(from){
+  const sp=speed(), base=events[from].ms, beat=msPerMeasure/meter.num/sp/1000, countIn=meter.num;
+  const t0=ctx.currentTime+0.4+countIn*beat;
+  // count-in clicks (the mic ignores them)
+  for(let k=0;k<countIn;k++){ const at=ctx.currentTime+0.4+k*beat; const o=ctx.createOscillator(), g=ctx.createGain(); o.frequency.value=k?1000:1500; g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(0.25,at+0.005); g.gain.exponentialRampToValueAtTime(0.0001,at+0.08); o.connect(g); g.connect(master); o.start(at); o.stop(at+0.1); }
+  MIC.ignoreUntil=t0-0.12;
+  const list=[]; for(let i=from;i<events.length;i++) if(events[i].pitches.length) list.push({i,at:t0+(events[i].ms-base)/1000/sp,done:false});
+  MIC.tempo={t0,base,sp,list,next:0,shown:-1};
+  micSay(`Get ready… ${countIn} beats to count you in, then play along as the notes reach the keys.`);
+}
+function tempoTick(now){
+  const T=MIC.tempo; if(!T) return;
+  const ms=T.base+(now-T.t0)*1000*T.sp;
+  rollHead=rollTarget=Math.max(T.base,ms); rollDirty=true;
+  // show the note that is due now
+  let k=T.list.findIndex(n=>n.at>now-0.05); if(k<0) k=T.list.length-1;
+  if(k!==T.shown&&now>=T.t0-0.05){ T.shown=k; const n=T.list[k]; cur=n.i; highlight(events[n.i]); lightKeys(micTargets(n.i)); renderLesson(events[n.i]); }
+  // notes whose window has passed without being played are misses
+  const win=n=>Math.min(0.35,Math.max(0.15,(events[n.i].gap/1000/T.sp)*0.5));
+  for(const n of T.list){ if(!n.done&&now>n.at+win(n)+0.3&&!(MIC.pending&&Math.abs(MIC.pending.t-n.at)<=win(n)+0.1)){ n.done=true; MIC.stats.missed++; micMark(events[n.i],'note-bad'); (MIC.stats.badBars[barOf(events[n.i])]=(MIC.stats.badBars[barOf(events[n.i])]||0)+1); micStats(); } }
+  if(T.list.every(n=>n.done)&&now>T.list[T.list.length-1].at+0.9) micFinish();
+}
+function tempoHeard(fresh, binHz, t, post, pre){
+  const T=MIC.tempo; if(!T) return;
+  // the closest unplayed note in time
+  let best=null; for(const n of T.list){ if(n.done) continue; const d=t-n.at; const w=Math.min(0.35,Math.max(0.15,(events[n.i].gap/1000/T.sp)*0.5))+0.1; if(Math.abs(d)<=w&&(!best||Math.abs(d)<Math.abs(best.d))) best={n,d}; }
+  if(!best) return;
+  const targets=micTargets(best.n.i), j=micJudge(fresh,post,targets,binHz,pre), ev=events[best.n.i];
+  if(j.kind==='none') return;
+  best.n.done=true;
+  if(j.kind==='ok'){
+    const ms=Math.round(best.d*1000);
+    targets.forEach(m=>flash(m,'ok'));
+    if(Math.abs(ms)<=90){ MIC.stats.first++; micMark(ev,'note-ok'); micSay('On time ✓','ok'); }
+    else { MIC.stats.late++; micMark(ev,'note-late'); micSay(ms>0?`Right note, a little late (${ms} ms)`:`Right note, a little early (${-ms} ms)`,'ok'); }
+  } else {
+    if(j.played!=null) flash(j.played,'bad');
+    MIC.stats.wrong++; micMark(ev,'note-bad'); (MIC.stats.badBars[barOf(ev)]=(MIC.stats.badBars[barOf(ev)]||0)+1);
+    micSay(j.kind==='partial'?`Missing ${j.missing.map(m=>info(m).full).join(' + ')}`:`Wrong note: ${info(j.played).full} instead of ${targets.map(m=>info(m).full).join(' + ')}`,'bad');
+  }
+  micStats();
+}
+
+// ----- start, stop and the end-of-song summary -----
+async function micStart(from=cur){
+  if(MIC.on) return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ setStatus('This browser cannot use the microphone.','err'); return; }
+  stopDemo(); audio();
+  try{
+    if(!MIC.test){
+      MIC.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      MIC.src=ctx.createMediaStreamSource(MIC.stream);
+    } else MIC.src=MIC.test;
+  }catch(e){
+    const blocked=e&&(e.name==='NotAllowedError'||e.name==='SecurityError');
+    setStatus(blocked?(sampleFn?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to practice with the mic.':'Musisc needs permission to use the microphone. Allow it in your browser (the icon next to the address), then press Practice with mic again.'):'No microphone was found. Plug one in or use a device with a mic.','err');
+    return;
+  }
+  MIC.an=ctx.createAnalyser(); MIC.an.fftSize=8192; MIC.an.smoothingTimeConstant=0;
+  MIC.td=new Float32Array(MIC.an.fftSize); MIC.fd=new Float32Array(MIC.an.frequencyBinCount); MIC.mag=new Float32Array(MIC.an.frequencyBinCount);
+  MIC.src.connect(MIC.an);
+  MIC.mode=$('#micMode').value; MIC.on=true; MIC.hist=[]; MIC.rmsHist=[]; MIC.pending=null; MIC.tries=0; MIC.tempo=null;
+  const total=events.slice(from).filter(e=>e.pitches.length).length;
+  MIC.stats={first:0,done:0,wrong:0,late:0,missed:0,total,badBars:{},from,t0:Date.now()};
+  micClearMarks(); $('#micBar').hidden=false; $('#micBtn').classList.add('active'); $('#micBtn').lastChild.textContent=' Stop practice';
+  $('#lessonMode').textContent=MIC.mode==='tempo'?'Play along with the mic':'Practice with the mic';
+  micStats();
+  // a short quiet moment to learn the room's noise
+  micSay('Listening… stay quiet for a second while Musisc measures the room.');
+  const first=nextNoteIdx(from); if(first<0){ micStop(); return; }
+  MIC.noiseSpec=null;
+  MIC.calib={until:ctx.currentTime+0.9, rms:[], spec:new Float32Array(MIC.an.frequencyBinCount), n:0, done:()=>{
+    if(MIC.mode==='tempo') tempoStart(first); else { MIC.idx=first; goTo(first,false); micSay(promptFor(first)); }
+  }};
+  micLoop();
+}
+function micStop(quiet){
+  if(!MIC.on) return;
+  MIC.on=false; cancelAnimationFrame(MIC.raf);
+  try{ MIC.src&&MIC.src.disconnect(); }catch(e){}
+  if(MIC.stream) MIC.stream.getTracks().forEach(t=>t.stop());
+  MIC.stream=null; MIC.src=null; MIC.tempo=null;
+  $('#micBtn').classList.remove('active'); $('#micBtn').lastChild.textContent=' Practice with mic';
+  $('#lessonMode').textContent='Learn note by note';
+  if(!quiet){ $('#micBar').hidden=true; }
+}
+function micFinish(){
+  const s=MIC.stats, mode=MIC.mode; micStop(true);
+  const secs=Math.round((Date.now()-s.t0)/1000);
+  const bars=Object.entries(s.badBars).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([b])=>+b).sort((a,b)=>a-b);
+  const pct=s.total?Math.round(100*s.first/s.total):0;
+  const head=mode==='tempo'
+    ?`You played along to the end. <b>${pct}%</b> on time and right (${s.first} of ${s.total}), ${s.late} a little early or late, ${s.wrong} wrong, ${s.missed} missed.`
+    :`You played the whole piece in ${secs} s. <b>${pct}%</b> right first time (${s.first} of ${s.total}), ${s.wrong} mistake${s.wrong===1?'':'s'}.`;
+  const tip=bars.length?` Tricky spots: bar${bars.length>1?'s':''} ${bars.join(', ')}.`:(pct>=90?' Excellent! Try Play along, or raise the speed.':'');
+  micSay(head+tip+` <span class="mic-actions"><button class="btn mini primary" type="button" id="micAgain">Practice again</button>${bars.length?` <button class="btn mini" type="button" id="micBars">Practice bar ${bars[0]}</button>`:''} <button class="btn mini" type="button" id="micClose">Close</button></span>`, pct>=80?'ok':'');
+  $('#micAgain').onclick=()=>micStart(s.from);
+  if($('#micBars')) $('#micBars').onclick=()=>{ const i=events.findIndex(e=>e.pitches.length&&barOf(e)>=bars[0]); micStart(i<0?s.from:i); };
+  $('#micClose').onclick=()=>{ $('#micBar').hidden=true; micClearMarks(); };
+}
+$('#micBtn').onclick=()=> MIC.on?micStop():micStart(cur>0?cur:firstNoteIndex());
+$('#micStop').onclick=()=>micStop();
+$('#micMode').onchange=()=>{ if(MIC.on){ const from=MIC.stats.from; micStop(true); micStart(from); } };
 
 /* ---------- song library ---------- */
 const SAMPLE_NAMES={ode:'Ode to Joy (melody)',ode2:'Ode to Joy (both hands)',twinkle:'Twinkle, Twinkle, Little Star',minuet:'Minuet in G'};

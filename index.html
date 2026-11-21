@@ -102,6 +102,21 @@ select.btn{padding-right:10px}
 #score svg path,#score svg text{fill:currentColor}
 #score svg .abcjs-note,#score svg .abcjs-rest{cursor:pointer}
 #score svg .hl path,#score svg path.hl,#score svg .hl text{fill:var(--now)}
+#score svg .note-ok path,#score svg path.note-ok{fill:var(--good)}
+#score svg .note-late path,#score svg path.note-late{fill:#D9A400}
+#score svg .note-bad path,#score svg path.note-bad{fill:var(--bad)}
+#score svg .hl.note-ok path,#score svg .hl.note-bad path,#score svg .hl.note-late path{fill:var(--now)}
+#micBtn.active{background:var(--bad);border-color:var(--bad);color:#fff}
+.mic-bar{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);display:grid;gap:8px}
+.mic-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.85rem;color:var(--muted)}
+.mic-top select{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
+.mic-meter{flex:1 1 90px;min-width:70px;height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.mic-meter i{display:block;height:100%;width:0;background:var(--good);transition:width .08s linear}
+.mic-stats{font-variant-numeric:tabular-nums;display:flex;gap:10px}
+.mic-stats .g{color:var(--good)} .mic-stats .r{color:var(--bad)} .mic-stats .y{color:#B98C00}
+.mic-msg{font-size:1.05rem;font-weight:500;min-height:1.5em}
+.mic-msg.ok{color:var(--good)} .mic-msg.bad{color:var(--bad)}
+.mic-actions{display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px;vertical-align:middle}
 #orig img{display:block;max-width:100%;border-radius:8px;margin:0 auto}
 #abcText{width:100%;min-height:280px;font-family:var(--f-mono);font-size:.85rem;line-height:1.55;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg);resize:vertical}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
@@ -231,6 +246,20 @@ select.btn{padding-right:10px}
           <button class="btn" id="fromHereBtn" type="button" title="Play from the current note">From here</button>
           <label class="speed" for="speed">Speed <input id="speed" type="range" min="40" max="150" step="5" value="100"><span id="speedOut">100%</span></label>
           <label class="bpm" for="bpmIn" title="Type a tempo in beats per minute, then press Enter">Tempo <input id="bpmIn" type="number" min="20" max="300" step="1" inputmode="numeric" value="100"> BPM</label>
+          <button class="btn" id="micBtn" type="button" title="Play on your own piano: Musisc listens and guides you">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Practice with mic</button>
+        </div>
+        <div class="mic-bar" id="micBar" hidden>
+          <div class="mic-top">
+            <label for="micMode">Mode <select id="micMode">
+              <option value="wait">Wait for me: one note at a time</option>
+              <option value="tempo">Play along: keep the tempo</option>
+            </select></label>
+            <span class="mic-meter" title="Microphone level"><i id="micLevel"></i></span>
+            <span class="mic-stats" id="micStats"></span>
+            <button class="btn mini" id="micStop" type="button">Stop</button>
+          </div>
+          <div class="mic-msg" id="micMsg" aria-live="polite"></div>
         </div>
       </div>
       <div class="view" id="view-score"><div id="score"></div></div>
