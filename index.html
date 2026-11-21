@@ -51,6 +51,10 @@ button{cursor:pointer}
 header{padding-block:18px 10px;display:flex;flex-wrap:wrap;gap:12px 24px;align-items:end;justify-content:space-between}
 .brand h1{font-size:1.65rem;font-weight:700;letter-spacing:-.01em}
 .brand p{margin:2px 0 0;color:var(--muted);font-size:.9rem}
+.brand h1 .demo-tag{display:inline-block;vertical-align:middle;margin-left:10px;padding:2px 9px;border-radius:999px;border:1px solid var(--line);font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--muted);background:var(--panel)}
+/* watermark: faint, repeated, never catches taps or clicks */
+.watermark{position:fixed;inset:0;z-index:50;pointer-events:none;user-select:none;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27360%27%20height%3D%27220%27%3E%3Ctext%20x%3D%27180%27%20y%3D%27115%27%20text-anchor%3D%27middle%27%20transform%3D%27rotate(-24%20180%20110)%27%20font-family%3D%27Inter%2CSegoe%20UI%2CArial%2Csans-serif%27%20font-size%3D%2722%27%20font-weight%3D%27700%27%20letter-spacing%3D%272%27%20fill%3D%27rgb(128%2C128%2C128)%27%20fill-opacity%3D%270.13%27%3EDEMO%20%C2%B7%20Made%20by%20Alan%3C%2Ftext%3E%3C%2Fsvg%3E");background-repeat:repeat;background-size:360px 220px}
+@media print{.watermark{position:absolute}}
 
 .intake{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;border:1.5px dashed var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
 .find{margin-top:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
@@ -195,10 +199,11 @@ select.btn{padding-right:10px}
 </style>
 
 <div id="app">
+<div class="watermark" aria-hidden="true"></div>
 <div class="scroller" id="scroller"><div class="wrap">
   <header>
     <div class="brand">
-      <h1>Musisc</h1>
+      <h1>Musisc <span class="demo-tag">Demo · Made by Alan</span></h1>
       <p>Bring a score. Learn every note. Hear the whole song.</p>
     </div>
   </header>
