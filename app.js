@@ -321,9 +321,10 @@ function onKeyPlayed(m){
 /* ---------- lesson ---------- */
 function nextIdx(i,dir){ let j=i+dir; while(j>=0&&j<events.length&&!events[j].pitches.length&&events[j].els.length===0) j+=dir; return Math.max(0,Math.min(events.length-1,j)); }
 
+let litEls=[];
 function highlight(ev){
-  document.querySelectorAll('#score .hl').forEach(e=>e.classList.remove('hl'));
-  ev.els.forEach(e=>e&&e.classList&&e.classList.add('hl'));
+  litEls.forEach(e=>e.classList.remove('hl'));
+  litEls=ev.els.filter(e=>e&&e.classList); litEls.forEach(e=>e.classList.add('hl'));
   const el=ev.els[0]; if(!el||!$('#view-score').offsetParent) return;
   const sc=$('#scroller'), r=el.getBoundingClientRect(), sr=sc.getBoundingClientRect();
   if(r.top<sr.top+60) sc.scrollBy({top:r.top-sr.top-80,behavior:'smooth'});
@@ -335,13 +336,19 @@ function goTo(i, sound=true){
   cur=Math.max(0,Math.min(events.length-1,i));
   const ev=events[cur];
   highlight(ev);
-  renderLesson(ev);
+  if(play) lessonSoon(ev); else renderLesson(ev);
   lightKeys(ev.pitches.map(p=>p.midi));
   if(!play) rollTarget=ev.ms+1;
   if(!play){ $('#feedback').textContent=''; $('#feedback').className='feedback'; }
   if(sound&&ev.pitches.length) hear(ev.pitches.map(p=>p.midi), Math.min(1.4,Math.max(.4,ev.pitches[0].ms/1000)));
 }
 
+let lessonAt=0, lessonTimer=0;
+function lessonSoon(ev){
+  const now=performance.now(); clearTimeout(lessonTimer);
+  if(now-lessonAt>=200){ lessonAt=now; renderLesson(ev); }
+  else lessonTimer=setTimeout(()=>{ lessonAt=performance.now(); renderLesson(events[cur]); },200-(now-lessonAt));
+}
 function renderLesson(ev){
   const total=events.length;
   $('#counter').textContent=`Step ${cur+1} of ${total}`;
@@ -467,16 +474,22 @@ function startDemo(from=firstNoteIndex()){
   }
   if(win>0){ const last={}; list.slice().sort((a,b)=>a.start-b.start).forEach(n=>{ const prev=last[n.midi]; if(prev&&prev.end>n.start) prev.end=Math.max(prev.start+60,n.start-10); last[n.midi]=n; }); }
   if(win>0&&pedalIn) bus.connect(pedalIn); // the demo's notes share the pedal resonance (and stop with the demo)
-  list.forEach(n=>tone(n.midi,t0+(n.start-base)/1000/sp,Math.max(.1,(n.end-n.start)/1000/sp),bus,n.vel,win>0));
+  // notes are handed to the audio engine a few seconds ahead as the song plays, not all at once:
+  // a long piece would otherwise create thousands of sound objects up front, which makes phones and
+  // iPads stutter and can crash the page
+  list.sort((a,b)=>a.start-b.start);
   const last=events[events.length-1];
   const endT=t0+((last.ms-base)+last.gap)/1000/sp+.3;
-  play={bus,t0,base,sp,idx:from-1,endT,raf:0};
+  play={bus,t0,base,sp,idx:from-1,endT,raf:0,list,next:0,pedal:win>0,timer:0};
+  scheduleAhead();
+  play.timer=setInterval(scheduleAhead,200); // keeps the sound going even when the screen skips frames
   $('#lessonMode').textContent='Demo: follow along';
   setPlayBtn(true);
   const tick=()=>{
     if(!play) return;
     const now=ctx.currentTime;
     if(now>=play.endT){ resumeIdx=null; stopDemo(); return; }
+    scheduleAhead();
     const ms=(now-play.t0)*1000*play.sp+play.base;
     rollHead=rollTarget=Math.max(play.base,ms);
     let j=play.idx;
@@ -486,12 +499,23 @@ function startDemo(from=firstNoteIndex()){
   };
   play.raf=requestAnimationFrame(tick);
 }
+const LOOKAHEAD=2.5; // seconds of music queued in the audio engine
+function scheduleAhead(){
+  if(!play) return;
+  const p=play, until=ctx.currentTime+LOOKAHEAD;
+  while(p.next<p.list.length){
+    const n=p.list[p.next], at=p.t0+(n.start-p.base)/1000/p.sp;
+    if(at>until) break;
+    if(at>=ctx.currentTime-0.05) tone(n.midi,at,Math.max(.1,(n.end-n.start)/1000/p.sp),p.bus,n.vel,p.pedal);
+    p.next++;
+  }
+}
 let resumeIdx=null; // where Play continues after a pause
 function pauseDemo(){ if(!play) return; resumeIdx=Math.max(0,play.idx); stopDemo(); goTo(resumeIdx,false); setPlayBtn(false); }
 function playOrResume(){ if(play) return pauseDemo(); const from=resumeIdx!=null?resumeIdx:firstNoteIndex(); resumeIdx=null; startDemo(from); }
 function stopDemo(){
   if(!play) return;
-  cancelAnimationFrame(play.raf);
+  cancelAnimationFrame(play.raf); clearInterval(play.timer);
   const b=play.bus; try{ b.gain.setTargetAtTime(0,ctx.currentTime,.03); setTimeout(()=>b.disconnect(),300);}catch(e){}
   play=null; setPlayBtn(false);
   $('#lessonMode').textContent='Learn note by note';
