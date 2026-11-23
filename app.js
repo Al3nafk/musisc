@@ -241,7 +241,7 @@ function withBarNumbers(abc){
 let lastLayout='';
 function scoreLayout(){
   const w=($('#score')&&$('#score').clientWidth)||760;
-  const bars=w<430?2:w<640?3:4, width=Math.round(Math.max(300,Math.min(760,w-8)));
+  const bars=4, width=Math.round(Math.max(560,Math.min(760,w-8))); // always 4 bars a row; narrow screens draw at 560+ and scale down
   return {bars, width, key:bars+':'+(w<640?Math.round(width/40):'w')};
 }
 let relayoutT=0;
@@ -268,9 +268,18 @@ function trimBarNumbers(){
 function loadAbc(abc){
   stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
   const L=scoreLayout(); lastLayout=L.key;
-  const out=ABCJS.renderAbc('score', withBarNumbers(abc), {add_classes:true, responsive:'resize', staffwidth:L.width,
-    wrap:{minSpacing:1.8,maxSpacing:2.7,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
-  const v=out&&out[0];
+  // 4 bars a row: abcjs drops to fewer bars on busy music, so redraw wider (the score is then
+  // scaled down to fit the screen) until no row except the last has fewer than 4 bars.
+  const src=withBarNumbers(abc);
+  let out, v;
+  for(const k of [1,1.4,1.9,2.6]){
+    out=ABCJS.renderAbc('score', src, {add_classes:true, responsive:'resize', staffwidth:Math.round(L.width*k),
+      wrap:{minSpacing:1.4,maxSpacing:3.2,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
+    v=out&&out[0];
+    if(!v||!v.lines) break;
+    const rows=v.lines.filter(l=>l.staff).map(l=>(l.staff[0].voices[0]||[]).filter(e=>e.el_type==='bar').length);
+    if(rows.slice(0,-1).every(n=>n>=L.bars)) break;
+  }
   if(!v||!v.lines||!v.lines.some(l=>l.staff)) throw new Error('No music found in that notation.');
   trimBarNumbers();
   const hasTempo=!!(v.metaText&&v.metaText.tempo);
