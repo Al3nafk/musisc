@@ -705,6 +705,7 @@ function updateChordBtn(){
   b.querySelector('span').textContent=leadSheet?'Chords':'Suggest chords';
   b.title=leadSheet?'This is a lead sheet: show or hide its chord symbols':'Suggest chord names worked out from the notes';
   $('#score').classList.toggle('hide-chords',leadSheet&&!leadOn);
+  if(typeof updateChordPlayBtn==='function') updateChordPlayBtn();
 }
 
 /* ---------- chord explanations (shown when you hover over, or tap, a chord symbol) ---------- */
@@ -787,12 +788,181 @@ function showChordTip(el){
 function hideChordTip(){ const tip=$('#chordTip'); if(tip) tip.hidden=true; }
 function wireChordTips(){
   document.querySelectorAll('#score .abcjs-chord').forEach(el=>{
-    el.addEventListener('pointerenter',e=>{ if(e.pointerType==='mouse') showChordTip(el); });
+    el.addEventListener('pointerenter',e=>{ if(e.pointerType==='mouse'&&!popState) showChordTip(el); });
     el.addEventListener('pointerleave',e=>{ if(e.pointerType==='mouse') hideChordTip(); });
-    el.addEventListener('pointerdown',e=>{ if(e.pointerType!=='mouse'){ showChordTip(el); clearTimeout(chordTipT); chordTipT=setTimeout(hideChordTip,5000); } });
+    // a click or tap opens the chord pop-up instead of selecting the note under it
+    ['pointerdown','mousedown','touchstart','mouseup','pointerup'].forEach(t=>el.addEventListener(t,e=>e.stopPropagation(),{passive:true}));
+    el.addEventListener('click',e=>{ e.stopPropagation(); openChordPop(el); });
   });
 }
 addEventListener('scroll',hideChordTip,true);
+/* ---------- chord pop-up and chord backing ----------
+   Click (or tap) a chord symbol: a pop-up shows where the chord is (piano keys, or a chord shape for
+   guitar players), lets you step through its inversions, and plays it. "Chord backing" also plays the
+   chords along with the demo, each one held until the next chord symbol. Chord names on the page are at
+   your instrument's written pitch; the sound is always at concert pitch. */
+let chordLine=[], chordPlayOn=(()=>{ try{ return localStorage.getItem('smc.chordPlay')!=='off'; }catch(e){ return true; } })();
+function writtenOffset(){ return INST.part!=='both'?partShift+INST.transpose:0; }
+function chordTones(name){ // pitch classes and intervals of a chord name, at written pitch
+  const c=parseChordName(name); if(!c) return null;
+  return {c, ivs:c.type[2]};
+}
+// a comfortable piano voicing around the middle of the keyboard; inv moves the lowest notes up an octave
+function chordVoicing(name, inv=0, withBass=false, offset=0){
+  const t=chordTones(name); if(!t) return null;
+  const root=((t.c.root-offset)%12+12)%12;
+  let base=48+root; if(base>55) base-=12;
+  let notes=t.ivs.map(i=>base+i).sort((a,b)=>a-b);
+  const n=Math.min(inv,notes.length-1);
+  for(let k=0;k<n;k++){ notes.push(notes.shift()+12); }
+  notes.sort((a,b)=>a-b);
+  let bass=null;
+  if(t.c.bass!=null){ const bp=((t.c.bass-offset)%12+12)%12; bass=notes[0]-((notes[0]-bp)%12+12)%12; if(bass===notes[0]) bass-=12; }
+  else if(withBass){ bass=base-12; }
+  if(bass!=null&&(withBass||t.c.bass!=null)) notes=[bass].concat(notes.filter(m=>m!==bass));
+  return {notes, bass, max:Math.min(3,t.ivs.length-1)};
+}
+// guitar chord shapes, low E string first (-1 = don't play that string)
+const GTR_OPEN={
+  'C':[-1,3,2,0,1,0],'D':[-1,-1,0,2,3,2],'E':[0,2,2,1,0,0],'G':[3,2,0,0,0,3],'A':[-1,0,2,2,2,0],
+  'Am':[-1,0,2,2,1,0],'Dm':[-1,-1,0,2,3,1],'Em':[0,2,2,0,0,0],
+  'A7':[-1,0,2,0,2,0],'B7':[-1,2,1,2,0,2],'C7':[-1,3,2,3,1,0],'D7':[-1,-1,0,2,1,2],'E7':[0,2,0,1,0,0],'G7':[3,2,0,0,0,1],
+  'Am7':[-1,0,2,0,1,0],'Em7':[0,2,0,0,0,0],'Dm7':[-1,-1,0,2,1,1],
+  'Cmaj7':[-1,3,2,0,0,0],'Fmaj7':[-1,-1,3,2,1,0],'Gmaj7':[3,2,0,0,0,2],'Amaj7':[-1,0,2,1,2,0],'Dmaj7':[-1,-1,0,2,2,2],'Emaj7':[0,2,1,1,0,0],
+  'Dsus4':[-1,-1,0,2,3,3],'Asus4':[-1,0,2,2,3,0],'Esus4':[0,2,2,2,0,0],'Dsus2':[-1,-1,0,2,3,0],'Asus2':[-1,0,2,2,0,0]
+};
+const GTR_E={'':[0,2,2,1,0,0],m:[0,2,2,0,0,0],'7':[0,2,0,1,0,0],m7:[0,2,0,0,0,0],sus4:[0,2,2,2,0,0]};
+const GTR_A={'':[-1,0,2,2,2,0],m:[-1,0,2,2,1,0],'7':[-1,0,2,0,2,0],m7:[-1,0,2,0,1,0],maj7:[-1,0,2,1,2,0],sus4:[-1,0,2,2,3,0],sus2:[-1,0,2,2,0,0]};
+function guitarShape(name){
+  const c=parseChordName(name); if(!c) return null;
+  const kind={'major':'','minor':'m','dominant seventh':'7','minor seventh':'m7','major seventh':'maj7','suspended 4th':'sus4','suspended 2nd':'sus2'}[c.type[1]];
+  if(kind==null) return null;
+  const SH=['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'], FL=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+  for(const nm of [SH[c.root]+kind, FL[c.root]+kind]) if(GTR_OPEN[nm]) return {frets:GTR_OPEN[nm], barre:0};
+  const opts=[];
+  if(GTR_E[kind]){ const r=((c.root-4)%12+12)%12||12; opts.push({frets:GTR_E[kind].map(f=>f<0?-1:f+r), barre:r}); }
+  if(GTR_A[kind]){ const r=((c.root-9)%12+12)%12||12; opts.push({frets:GTR_A[kind].map(f=>f<0?-1:f+r), barre:r}); }
+  return opts.sort((a,b)=>a.barre-b.barre)[0]||null;
+}
+const GTR_STRINGS=[40,45,50,55,59,64];
+function guitarSvg(shape){
+  const fr=shape.frets, used=fr.filter(f=>f>0), lo=Math.min(...used,99), start=Math.max(...fr)<=4?1:lo, W=150, H=150, x0=22, y0=28, sw=(W-2*x0)/5, fh=22;
+  let g='';
+  for(let i=0;i<6;i++) g+=`<line x1="${x0+i*sw}" x2="${x0+i*sw}" y1="${y0}" y2="${y0+5*fh}" stroke="var(--ink)" stroke-width="1.2"/>`;
+  for(let k=0;k<=5;k++) g+=`<line x1="${x0}" x2="${x0+5*sw}" y1="${y0+k*fh}" y2="${y0+k*fh}" stroke="var(--ink)" stroke-width="${k===0&&start===1?4:1.2}"/>`;
+  if(start>1) g+=`<text x="${x0-6}" y="${y0+fh*.65}" font-size="11" text-anchor="end" fill="var(--muted)">${start}fr</text>`;
+  if(shape.barre){ const bs=fr.findIndex(f=>f===shape.barre); g+=`<rect x="${x0+bs*sw-7}" y="${y0+(shape.barre-start+.5)*fh-7}" width="${(5-bs)*sw+14}" height="14" rx="7" fill="var(--accent)"/>`; }
+  fr.forEach((f,i)=>{ const x=x0+i*sw;
+    if(f<0) g+=`<text x="${x}" y="${y0-8}" font-size="12" text-anchor="middle" fill="var(--muted)">×</text>`;
+    else if(f===0) g+=`<circle cx="${x}" cy="${y0-12}" r="4.5" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
+    else if(!(shape.barre&&f===shape.barre)) g+=`<circle cx="${x}" cy="${y0+(f-start+.5)*fh}" r="7" fill="var(--accent)"/>`; });
+  'EADGBE'.split('').forEach((s,i)=>g+=`<text x="${x0+i*sw}" y="${H-4}" font-size="10" text-anchor="middle" fill="var(--muted)">${s}</text>`);
+  return `<svg viewBox="0 0 ${W} ${H}" width="150" height="150" role="img" aria-label="Guitar chord shape">${g}</svg>`;
+}
+function keysSvg(notes, bass){ // a small keyboard with a dot on each key of the chord
+  const lo=Math.floor((Math.min(...notes))/12)*12, hi=Math.max(lo+24,Math.ceil((Math.max(...notes)+1)/12)*12);
+  const whites=[]; for(let m=lo;m<hi;m++) if(!BLACK.has(m%12)) whites.push(m);
+  const kw=Math.min(22,300/whites.length), W=whites.length*kw, H=78;
+  let g='';
+  whites.forEach((m,i)=>{ g+=`<rect x="${i*kw}" y="0" width="${kw}" height="${H}" fill="#fff" stroke="#555" stroke-width="1"/>`; if(m%12===0) g+=`<text x="${i*kw+kw/2}" y="${H-5}" font-size="8" text-anchor="middle" fill="#777">C${m/12-1}</text>`; });
+  const dots=[];
+  for(let m=lo;m<hi;m++) if(BLACK.has(m%12)){ const wi=whites.indexOf(m+1); g+=`<rect x="${wi*kw-kw*.32}" y="0" width="${kw*.64}" height="${H*.6}" fill="#1B2130"/>`; }
+  notes.forEach(m=>{ const blk=BLACK.has(m%12), wi=blk?whites.indexOf(m+1):whites.indexOf(m); if(wi<0) return; const x=blk?wi*kw:wi*kw+kw/2, y=blk?H*.6-9:H-18; dots.push(`<circle cx="${x}" cy="${y}" r="${Math.min(6,kw*.3)}" fill="${m===bass?'var(--lh-b)':'var(--accent)'}"/>`); });
+  return `<svg viewBox="-1 -1 ${W+2} ${H+2}" width="${W+2}" height="${H+2}" role="img" aria-label="Piano keys of the chord">${g}${dots.join('')}</svg>`;
+}
+const INV_NAME=['Root position','1st inversion','2nd inversion','3rd inversion'];
+let popState=null;
+function chordSoundTb(){ return ['guitar','eguitar','uke'].includes(INST.sound)?INST.sound:INST.sound==='epiano'?'epiano':'piano'; }
+function playChordNotes(midis, strum){ audio(); const t=ctx.currentTime+.03; midis.forEach((m,i)=>tone(m,t+(strum?i*.03:0),1.6,undefined,.42,false,chordSoundTb())); }
+function openChordPop(el){
+  hideChordTip();
+  const name=el.textContent.trim(); if(!parseChordName(name)) return;
+  popState={el,name,inv:0};
+  let pop=$('#chordPop');
+  if(!pop){
+    pop=document.createElement('div'); pop.id='chordPop'; pop.className='chord-pop'; pop.setAttribute('role','dialog'); pop.setAttribute('aria-label','Chord');
+    document.body.appendChild(pop);
+    pop.addEventListener('click',e=>{
+      const b=e.target.closest('button'); if(!b||!popState) return;
+      if(b.dataset.act==='close') return closeChordPop();
+      if(b.dataset.act==='prev'||b.dataset.act==='next'){ const v=chordVoicing(popState.name); popState.inv=(popState.inv+(b.dataset.act==='next'?1:-1)+v.max+1)%(v.max+1); fillChordPop(); playPopChord(); }
+      if(b.dataset.act==='play') playPopChord();
+    });
+  }
+  fillChordPop(); pop.hidden=false; placeChordPop(); playPopChord();
+}
+function popGuitar(){ return ['guitar','eguitar'].includes(INST.id)&&guitarShape(popState.name); }
+function fillChordPop(){
+  const pop=$('#chordPop'), s=popState, v=chordVoicing(s.name,s.inv), shape=popGuitar(), t=chordTones(s.name);
+  const pretty=x=>x.replace(/b(?=\d|m|M|$|\/|s|a|d|7|6|9)/g,'♭').replace(/#/g,'♯');
+  const notes=t.ivs.map(i=>info(((t.c.root+i)%12)+60-(INST.transpose||0)).name).join(' · ');
+  const diagram=shape?guitarSvg(shape):keysSvg(v.notes,v.bass);
+  const inv=shape?`<div class="cp-inv"><span>${shape.barre?'Barre chord: lay one finger across fret '+shape.barre:'Open chord shape'}</span></div>`
+    :`<div class="cp-inv"><button type="button" class="cp-arrow" data-act="prev" aria-label="Previous inversion">‹</button><span>${INV_NAME[s.inv]}</span><button type="button" class="cp-arrow" data-act="next" aria-label="Next inversion">›</button></div>`;
+  pop.innerHTML=`<button type="button" class="cp-close" data-act="close" aria-label="Close">×</button>
+    <div class="cp-name">${esc(pretty(s.name))}</div>
+    <div class="cp-diagram">${diagram}</div>${inv}
+    <div class="cp-notes">Notes: <b>${esc(notes)}</b>${t.c.bass!=null?` · lowest note <b>${esc(info(t.c.bass+60-(INST.transpose||0)).name)}</b>`:''}</div>
+    <div class="cp-explain">${(chordExplain(s.name)||'').replace(/<div class="ct-name">[\s\S]*?<\/div>\s*<div>Notes:[\s\S]*?<\/div>/,'')}</div>
+    <button type="button" class="btn primary cp-play" data-act="play"><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7 4v16l13-8z"/></svg> Play</button>`;
+}
+function playPopChord(){
+  const s=popState; if(!s) return;
+  const shape=popGuitar();
+  if(shape){ playChordNotes(shape.frets.map((f,i)=>f<0?null:GTR_STRINGS[i]+f).filter(m=>m!=null),true); return; }
+  const v=chordVoicing(s.name,s.inv,false,writtenOffset()); if(v) playChordNotes(v.notes,false);
+}
+function placeChordPop(){
+  const pop=$('#chordPop'), el=popState&&popState.el; if(!pop||!el) return;
+  const r=el.getBoundingClientRect(), pw=Math.min(320,innerWidth-24); pop.style.width=pw+'px';
+  const left=Math.max(12,Math.min(innerWidth-pw-12,r.left+r.width/2-pw/2)), ph=pop.offsetHeight;
+  pop.style.left=left+'px'; pop.style.top=(r.bottom+8+ph<innerHeight-8?r.bottom+8:Math.max(8,r.top-ph-8))+'px';
+}
+function closeChordPop(){ const p=$('#chordPop'); if(p) p.hidden=true; popState=null; }
+document.addEventListener('pointerdown',e=>{ if(popState&&!e.target.closest('#chordPop')&&!e.target.closest('#score .abcjs-chord')) closeChordPop(); },true);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeChordPop(); });
+$('#scroller').addEventListener('scroll',()=>{ if(popState) closeChordPop(); },{passive:true});
+
+// the chord symbols of the score with the time each one starts (for chord backing)
+function buildChordLine(v){
+  chordLine=[];
+  const at={}; events.forEach(ev=>ev.startChars.forEach(sc=>{ if(at[sc]==null) at[sc]=ev.ms; }));
+  v.lines.forEach(l=>l.staff&&l.staff.forEach(st=>(st.voices||[]).forEach(vo=>vo.forEach(e=>{
+    const c=e.chord&&e.chord.find(c=>!c.position||c.position==='default');
+    if(c&&at[e.startChar]!=null&&parseChordName(c.name)) chordLine.push({ms:at[e.startChar],name:c.name});
+  }))));
+  chordLine.sort((a,b)=>a.ms-b.ms);
+  chordLine=chordLine.filter((c,i)=>!i||c.ms!==chordLine[i-1].ms);
+  updateChordPlayBtn();
+}
+function chordsShowing(){ return chordLine.length>0&&(leadSheet?leadOn:chordsOn); }
+function updateChordPlayBtn(){
+  const b=$('#chordPlayBtn'); if(!b) return;
+  b.hidden=!chordsShowing();
+  b.setAttribute('aria-pressed',String(chordPlayOn));
+}
+// adds the chord backing to the demo's note list: each chord held until the next one (at most two bars)
+function addChordBacking(list, fromMs){
+  if(!chordPlayOn||!chordsShowing()) return;
+  const off=writtenOffset(), last=events[events.length-1], songEnd=last?last.ms+last.gap:0;
+  const guitar=['guitar','eguitar'].includes(INST.id), tb=chordSoundTb();
+  chordLine.forEach((c,i)=>{
+    const end=Math.min(i+1<chordLine.length?chordLine[i+1].ms:songEnd, c.ms+msPerMeasure*2);
+    if(end<=fromMs) return;
+    const start=Math.max(c.ms,fromMs);
+    let notes=null, strum=false;
+    if(guitar){ const sh=guitarShape(c.name); if(sh){ notes=sh.frets.map((f,k)=>f<0?null:GTR_STRINGS[k]+f).filter(m=>m!=null); strum=true; } }
+    if(!notes){ const v=chordVoicing(c.name,0,true,off); notes=v&&v.notes; }
+    if(!notes) return;
+    notes.forEach((m,k)=>list.push({midi:m,start:start+(strum?k*25:0),end:end-30,vel:.26,tb}));
+  });
+}
+function setChordPlay(on){
+  chordPlayOn=!!on; try{ localStorage.setItem('smc.chordPlay',chordPlayOn?'on':'off'); }catch(e){}
+  updateChordPlayBtn();
+  if(play){ const at=Math.max(0,play.idx); stopDemo(); startDemo(at); }
+}
+
 // abcjs's automatic line wrapping numbers every bar even when asked for row starts only,
 // so keep just the number at the left edge of each row and drop the rest.
 function trimBarNumbers(){
@@ -857,6 +1027,7 @@ function loadAbc(abc){
     return {ms:e.milliseconds, gap, els:(e.elements||[]).flat(), pitches, startChars:e.startCharArray||[e.startChar]};
   });
   applyPart(events);
+  closeChordPop(); buildChordLine(v);
   // meta
   const title=(v.metaText&&v.metaText.title)||'Untitled';
   const comp=(v.metaText&&v.metaText.composer)||'';
@@ -1094,6 +1265,7 @@ function startDemo(from=firstNoteIndex()){
     ev.pitches.forEach(p=>add(p,INST.sound,1));
     (ev.accomp||[]).forEach(p=>add(p,'piano',.45));
   }
+  addChordBacking(list, base);
   if(win>0){ const last={}; list.filter(n=>n.tb==='piano').sort((a,b)=>a.start-b.start).forEach(n=>{ const prev=last[n.midi]; if(prev&&prev.end>n.start) prev.end=Math.max(prev.start+60,n.start-10); last[n.midi]=n; }); }
   if(win>0&&pedalIn) bus.connect(pedalIn); // the demo's notes share the pedal resonance (and stop with the demo)
   // notes are handed to the audio engine a few seconds ahead as the song plays, not all at once:
@@ -1195,6 +1367,7 @@ function setPlayBtn(on){
 }
 $('#playBtn').onclick=playOrResume;
 $('#metroBtn').onclick=()=>setMetro(!metroOn);
+$('#chordPlayBtn').onclick=()=>setChordPlay(!chordPlayOn);
 $('#chordBtn').onclick=()=>{
   if(leadSheet){ setChords(!leadOn); return; }      // the sheet's own chords: just show or hide them
   if(play) pauseDemo(); setChords(!chordsOn); reloadKeep();
