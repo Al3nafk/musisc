@@ -461,7 +461,7 @@ function fitOctave(midis){
 function partShiftFor(v,opts){
   try{ v.setUpAudio(opts); }catch(e){}
   const nt=(new ABCJS.TimingCallbacks(v,opts).noteTimings||[]).filter(e=>e.type==='event');
-  const evs=nt.map(e=>({els:(e.elements||[]).flat(), pitches:(e.midiPitches||[]).filter(p=>p.cmd!=='rest'&&typeof p.pitch==='number').map(p=>({midi:p.pitch})).sort((a,b)=>b.midi-a.midi)}));
+  const evs=nt.map(e=>({els:(e.elements||[]).flat(), pitches:(e.midiPitches||[]).filter(p=>p.cmd!=='rest'&&typeof p.pitch==='number').map(p=>({midi:p.pitch+transposeSemis})).sort((a,b)=>b.midi-a.midi)}));
   const mv=maxVoice(evs);
   return fitOctave(evs.map(ev=>pickPart(ev,mv)).filter(Boolean).map(p=>p.midi));
 }
@@ -517,6 +517,7 @@ function applyInstUI(){
   $('#pedalLbl').hidden=!(INST.sound==='piano');
   if(typeof setPiano==='function') setPiano(pianoOpen);
   if(!piano) requestAnimationFrame(()=>drawInstView(events[cur]));
+  if(typeof renderChordPanel==='function'&&$('#chordsPanel')) renderChordPanel();
 }
 
 // ---- the guide under the score ----
@@ -1023,9 +1024,9 @@ const INV_NAME=['Root position','1st inversion','2nd inversion','3rd inversion']
 let popState=null;
 function chordSoundTb(){ return ['guitar','eguitar','uke'].includes(INST.sound)?INST.sound:INST.sound==='epiano'?'epiano':'piano'; }
 function playChordNotes(midis, strum){ audio(); const t=ctx.currentTime+.03; midis.forEach((m,i)=>tone(m,t+(strum?i*.03:0),1.6,undefined,.42,false,chordSoundTb())); }
-function openChordPop(el){
+function openChordPop(el,given){
   hideChordTip();
-  const name=el.textContent.trim(); if(!parseChordName(name)) return;
+  const name=(given||el.textContent).trim(); if(!parseChordName(name)) return;
   popState={el,name,inv:0};
   let pop=$('#chordPop');
   if(!pop){
@@ -1040,13 +1041,13 @@ function openChordPop(el){
   }
   fillChordPop(); pop.hidden=false; placeChordPop(); playPopChord();
 }
-function popGuitar(){ return ['guitar','eguitar'].includes(INST.id)&&guitarShape(popState.name); }
+function popGuitar(){ return plucked()&&frettedShape(popState.name); }
 function fillChordPop(){
   const pop=$('#chordPop'), s=popState, v=chordVoicing(s.name,s.inv), shape=popGuitar(), t=chordTones(s.name);
   const pretty=x=>x.replace(/b(?=\d|m|M|$|\/|s|a|d|7|6|9)/g,'♭').replace(/#/g,'♯');
   const notes=t.ivs.map(i=>info(((t.c.root+i)%12)+60-(INST.transpose||0)).name).join(' · ');
-  const diagram=shape?guitarSvg(shape):keysSvg(v.notes,v.bass);
-  const inv=shape?`<div class="cp-inv"><span>${shape.barre?'Barre chord: lay one finger across fret '+shape.barre:'Open chord shape'}</span></div>`
+  const diagram=shape?stringsSvg(shape):keysSvg(v.notes,v.bass);
+  const inv=shape?`<div class="cp-inv"><span>${capo?'Capo '+capo+': play the '+esc(pretty(shape.shapeName))+' shape. ':''}${shape.barre?'Barre chord: lay one finger across fret '+shape.barre:'Open chord shape'}</span></div>`
     :`<div class="cp-inv"><button type="button" class="cp-arrow" data-act="prev" aria-label="Previous inversion">‹</button><span>${INV_NAME[s.inv]}</span><button type="button" class="cp-arrow" data-act="next" aria-label="Next inversion">›</button></div>`;
   pop.innerHTML=`<button type="button" class="cp-close" data-act="close" aria-label="Close">×</button>
     <div class="cp-name">${esc(pretty(s.name))}</div>
@@ -1058,7 +1059,7 @@ function fillChordPop(){
 function playPopChord(){
   const s=popState; if(!s) return;
   const shape=popGuitar();
-  if(shape){ playChordNotes(shape.frets.map((f,i)=>f<0?null:GTR_STRINGS[i]+f).filter(m=>m!=null),true); return; }
+  if(shape){ playChordNotes(shape.notes,true); return; }
   const v=chordVoicing(s.name,s.inv,false,writtenOffset()); if(v) playChordNotes(v.notes,false);
 }
 function placeChordPop(){
@@ -1068,7 +1069,7 @@ function placeChordPop(){
   pop.style.left=left+'px'; pop.style.top=(r.bottom+8+ph<innerHeight-8?r.bottom+8:Math.max(8,r.top-ph-8))+'px';
 }
 function closeChordPop(){ const p=$('#chordPop'); if(p) p.hidden=true; popState=null; }
-document.addEventListener('pointerdown',e=>{ if(popState&&!e.target.closest('#chordPop')&&!e.target.closest('#score .abcjs-chord')) closeChordPop(); },true);
+document.addEventListener('pointerdown',e=>{ if(popState&&!e.target.closest('#chordPop')&&!e.target.closest('#score .abcjs-chord')&&!e.target.closest('.cg-item')) closeChordPop(); },true);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeChordPop(); });
 $('#scroller').addEventListener('scroll',()=>{ if(popState) closeChordPop(); },{passive:true});
 
@@ -1083,6 +1084,7 @@ function buildChordLine(v){
   chordLine.sort((a,b)=>a.ms-b.ms);
   chordLine=chordLine.filter((c,i)=>!i||c.ms!==chordLine[i-1].ms);
   updateChordPlayBtn();
+  if(typeof renderChordPanel==='function') setTimeout(renderChordPanel,0);
 }
 function chordsShowing(){ return chordLine.length>0&&(leadSheet?leadOn:chordsOn); }
 function updateChordPlayBtn(){
@@ -1094,13 +1096,14 @@ function updateChordPlayBtn(){
 function addChordBacking(list, fromMs){
   if(!chordPlayOn||!chordsShowing()) return;
   const off=writtenOffset(), last=events[events.length-1], songEnd=last?last.ms+last.gap:0;
-  const guitar=['guitar','eguitar'].includes(INST.id), tb=chordSoundTb();
+  const tb=chordSoundTb();
   chordLine.forEach((c,i)=>{
     const end=Math.min(i+1<chordLine.length?chordLine[i+1].ms:songEnd, c.ms+msPerMeasure*2);
     if(end<=fromMs) return;
     const start=Math.max(c.ms,fromMs);
+    if(plucked()&&strumUse){ addStrums(list,c.name,start,i+1<chordLine.length?Math.min(chordLine[i+1].ms,songEnd):songEnd); return; }
     let notes=null, strum=false;
-    if(guitar){ const sh=guitarShape(c.name); if(sh){ notes=sh.frets.map((f,k)=>f<0?null:GTR_STRINGS[k]+f).filter(m=>m!=null); strum=true; } }
+    if(plucked()){ const fsh=frettedShape(c.name); if(fsh){ notes=fsh.notes; strum=true; } }
     if(!notes){ const v=chordVoicing(c.name,0,true,off); notes=v&&v.notes; }
     if(!notes) return;
     notes.forEach((m,k)=>list.push({midi:m,start:start+(strum?k*25:0),end:end-30,vel:.26,tb}));
@@ -1110,6 +1113,162 @@ function setChordPlay(on){
   chordPlayOn=!!on; try{ localStorage.setItem('smc.chordPlay',chordPlayOn?'on':'off'); }catch(e){}
   updateChordPlayBtn();
   if(play){ const at=Math.max(0,play.idx); stopDemo(); startDemo(at); }
+}
+
+/* ---------- chord tools: transpose, capo, simplify, the song's chords, strumming ---------- */
+let transposeSemis=0, lastAbcLoaded=null;
+let capo=0, simplifyOn=(()=>{ try{ return localStorage.getItem('smc.simplify')==='on'; }catch(e){ return false; } })();
+const UKE_SHAPES={ // G C E A strings
+  C:[0,0,0,3],G:[0,2,3,2],Am:[2,0,0,0],F:[2,0,1,0],D:[2,2,2,0],Em:[0,4,3,2],A:[2,1,0,0],E:[4,4,4,2],Bb:[3,2,1,1],Bm:[4,2,2,2],
+  Dm:[2,2,1,0],Gm:[0,2,3,1],Cm:[0,3,3,3],Fm:[1,0,1,3],'F#m':[2,1,2,0],
+  E7:[1,2,0,2],G7:[0,2,1,2],C7:[0,0,0,1],A7:[0,1,0,0],D7:[2,2,2,3],B7:[2,3,2,2],
+  Am7:[0,0,0,0],Dm7:[2,2,1,3],Em7:[0,2,0,2],Cmaj7:[0,0,0,2]
+};
+const UKE_STRINGS=[67,60,64,69];
+const SHARP_N=['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+function transposeName(name,semis){ // "Am7/G" up 2 -> "Bm7/A"
+  const c=parseChordName(name); if(!c||!semis) return name;
+  const m=String(name).replace(/♭/g,'b').replace(/♯/g,'#').match(/^([A-G][#b]?)(.*?)(?:\/([A-G][#b]?))?$/);
+  const r=SHARP_N[(c.root+semis+120)%12];
+  return r+m[2]+(c.bass!=null?'/'+SHARP_N[(c.bass+semis+120)%12]:'');
+}
+function simplifyName(name){ // the plain chord a beginner would play
+  const c=parseChordName(name); if(!c) return name;
+  const t=c.type[1], q=/minor|half-diminished/.test(t)?'m':/^diminished/.test(t)?'dim':'';
+  return c.rootName+q;
+}
+function simplifySrc(src){ // rewrites the chord symbols of the notation (annotations like "^text" are left alone)
+  return src.replace(/"([A-G][#b♯♭]?[^"]*)"/g,(all,ch)=>parseChordName(ch)?'"'+simplifyName(ch)+'"':all);
+}
+function plucked(){ return ['guitar','eguitar','uke'].includes(INST.id); }
+// the shape to finger (with a capo, a shape lower than the chord that sounds) and the notes it sounds
+function frettedShape(name){
+  const shapeName=capo?transposeName(name,-capo):name;
+  if(INST.id==='uke'){ const s=simplifyName(shapeName), k=Object.keys(UKE_SHAPES).find(n=>n===shapeName.replace(/♭/g,'b').replace(/♯/g,'#'))||(UKE_SHAPES[s]?s:null);
+    if(!k) return null; const frets=UKE_SHAPES[k]; return {shapeName:k, frets, barre:0, strings:UKE_STRINGS, names:'GCEA', notes:frets.map((f,i)=>UKE_STRINGS[i]+f+capo)}; }
+  if(INST.id==='guitar'||INST.id==='eguitar'){ const sh=guitarShape(shapeName); if(!sh) return null;
+    return {shapeName, frets:sh.frets, barre:sh.barre, strings:GTR_STRINGS, names:'EADGBE', notes:sh.frets.map((f,i)=>f<0?null:GTR_STRINGS[i]+f+capo).filter(m=>m!=null)}; }
+  return null;
+}
+function stringsSvg(shape,size=150){ // chord box for any number of strings
+  const fr=shape.frets, N=fr.length, used=fr.filter(f=>f>0), lo=Math.min(...used,99), start=Math.max(...fr)<=4?1:lo;
+  const W=150, H=150, x0=N>4?22:34, y0=28, sw=(W-2*x0)/(N-1), fh=22;
+  let g='';
+  for(let i=0;i<N;i++) g+=`<line x1="${x0+i*sw}" x2="${x0+i*sw}" y1="${y0}" y2="${y0+5*fh}" stroke="var(--ink)" stroke-width="1.2"/>`;
+  for(let k=0;k<=5;k++) g+=`<line x1="${x0}" x2="${x0+(N-1)*sw}" y1="${y0+k*fh}" y2="${y0+k*fh}" stroke="var(--ink)" stroke-width="${k===0&&start===1?4:1.2}"/>`;
+  if(start>1) g+=`<text x="${x0-6}" y="${y0+fh*.65}" font-size="11" text-anchor="end" fill="var(--muted)">${start}fr</text>`;
+  if(shape.barre){ const bs=fr.findIndex(f=>f===shape.barre); g+=`<rect x="${x0+bs*sw-7}" y="${y0+(shape.barre-start+.5)*fh-7}" width="${(N-1-bs)*sw+14}" height="14" rx="7" fill="var(--accent)"/>`; }
+  fr.forEach((f,i)=>{ const x=x0+i*sw;
+    if(f<0) g+=`<text x="${x}" y="${y0-8}" font-size="12" text-anchor="middle" fill="var(--muted)">×</text>`;
+    else if(f===0) g+=`<circle cx="${x}" cy="${y0-12}" r="4.5" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
+    else if(!(shape.barre&&f===shape.barre)) g+=`<circle cx="${x}" cy="${y0+(f-start+.5)*fh}" r="7" fill="var(--accent)"/>`; });
+  shape.names.split('').forEach((s,i)=>g+=`<text x="${x0+i*sw}" y="${H-4}" font-size="10" text-anchor="middle" fill="var(--muted)">${s}</text>`);
+  return `<svg viewBox="0 0 ${W} ${H}" width="${size}" height="${size}" role="img" aria-label="Chord shape">${g}</svg>`;
+}
+
+// ---- strumming patterns (D = down, U = up, x = muted "chick", . = miss the strings) ----
+const STRUMS=[
+  {id:'folk',name:'Folk pop',meter:'4/4',sub:2,steps:'D.DU.UDU',acc:[0,4]},
+  {id:'downs',name:'Steady down strums',meter:'4/4',sub:2,steps:'D.D.D.D.',acc:[0]},
+  {id:'rock',name:'Rock eighths',meter:'4/4',sub:2,steps:'DUDUDUDU',acc:[2,6]},
+  {id:'ballad',name:'Ballad',meter:'4/4',sub:2,steps:'D.D.DUDU',acc:[0]},
+  {id:'chop',name:'Reggae off-beat',meter:'4/4',sub:2,steps:'.U.U.U.U',acc:[]},
+  {id:'funk',name:'Muted groove',meter:'4/4',sub:2,steps:'DxDUxUDU',acc:[0]},
+  {id:'triplet',name:'Triplet ballad',meter:'4/4',sub:3,steps:'D..D..D..DDD',acc:[0]},
+  {id:'shuffle',name:'Shuffle',meter:'4/4',sub:3,steps:'D.UD.UD.UD.U',acc:[3,9]},
+  {id:'waltz',name:'Waltz',meter:'3/4',sub:2,steps:'D.DUDU',acc:[0]},
+  {id:'waltz2',name:'Waltz, down strums',meter:'3/4',sub:2,steps:'D.D.D.',acc:[0]},
+  {id:'six8',name:'6/8 lilt',meter:'6/8',sub:3,steps:'DDUDDU',acc:[0,3]},
+  {id:'six8b',name:'6/8 basic',meter:'6/8',sub:3,steps:'D..D..',acc:[0,3]},
+  {id:'two4',name:'Polka',meter:'2/4',sub:2,steps:'D.DU',acc:[0]},
+  {id:'twelve8',name:'12/8 slow blues',meter:'12/8',sub:3,steps:'D.UD.UD.UD.U',acc:[0,6]},
+];
+let strumId=(()=>{ try{ return localStorage.getItem('smc.strum')||''; }catch(e){ return ''; } })();
+let strumUse=(()=>{ try{ return localStorage.getItem('smc.strumUse')!=='off'; }catch(e){ return true; } })();
+function meterKey(){ return meter.num+'/'+meter.den; }
+function strumsForMeter(){ const k=meterKey(); const l=STRUMS.filter(s=>s.meter===k); return l.length?l:STRUMS.filter(s=>s.meter==='4/4'); }
+function currentStrum(){ const l=strumsForMeter(); return l.find(s=>s.id===strumId)||l[0]; }
+function strumSvg(p){
+  const n=p.steps.length, sw=26, W=n*sw+8, H=p.sub===3?84:74, beats=n/p.sub;
+  let g='';
+  [...p.steps].forEach((c,i)=>{
+    const x=6+i*sw+sw/2;
+    if(c==='D'||c==='U'){ const y1=c==='D'?16:46, y2=c==='D'?46:16; g+=`<line x1="${x}" x2="${x}" y1="${y1}" y2="${y2-(c==='D'?6:-6)}" stroke="var(--ink)" stroke-width="2"/><path d="${c==='D'?`M${x-5} ${y2-7} L${x} ${y2} L${x+5} ${y2-7}`:`M${x-5} ${y2+7} L${x} ${y2} L${x+5} ${y2+7}`}" fill="var(--ink)"/>`; }
+    if(c==='x') g+=`<text x="${x}" y="38" font-size="16" text-anchor="middle" fill="var(--ink)">×</text>`;
+    if(p.acc.includes(i)&&c!=='.') g+=`<text x="${x}" y="11" font-size="12" text-anchor="middle" fill="var(--now)" font-weight="700">&gt;</text>`;
+    const beat=Math.floor(i/p.sub)+1, pos=i%p.sub;
+    const lbl=p.sub===2?(pos?'&':beat):p.sub===4?(pos===0?beat:['','e','&','a'][pos]):(pos?'':beat);
+    if(lbl!=='') g+=`<text x="${x}" y="62" font-size="12" text-anchor="middle" fill="var(--muted)">${lbl}</text>`;
+  });
+  for(let b=0;b<beats;b++){ const x1=6+b*p.sub*sw+6, x2=6+(b+1)*p.sub*sw-6;
+    if(p.sub===3) g+=`<path d="M${x1} 68 v6 H${x2} v-6" fill="none" stroke="var(--muted)"/><text x="${(x1+x2)/2}" y="83" font-size="10" text-anchor="middle" fill="var(--muted)">3</text>`;
+    else g+=`<line x1="${x1}" x2="${x2}" y1="68" y2="68" stroke="var(--muted)" stroke-width="2"/>`; }
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Strumming pattern ${esc(p.name)}">${g}</svg>`;
+}
+function strumNotes(name){ // notes of one strum, lowest string first
+  const fs=plucked()&&frettedShape(name); if(fs) return fs.notes;
+  const v=chordVoicing(name,0,false,writtenOffset()); return v?v.notes:null;
+}
+// puts one bar-worth (or more) of strums into a note list, in score milliseconds
+function addStrums(list,name,startMs,endMs,velMul=1){
+  const notes=strumNotes(name); if(!notes) return;
+  const p=currentStrum(), bm=beatMs(), stepMs=bm/p.sub, n=p.steps.length, tb=chordSoundTb();
+  let k=Math.ceil((startMs-barOrigin)/stepMs-1e-6);
+  for(;;k++){
+    const at=barOrigin+k*stepMs; if(at>=endMs-10) break;
+    const c=p.steps[((k%n)+n)%n]; if(c==='.') continue;
+    const acc=p.acc.includes(((k%n)+n)%n), vel=(acc?.34:.24)*velMul;
+    let nxt=k+1; while(nxt<k+n&&p.steps[((nxt%n)+n)%n]==='.') nxt++;
+    const until=Math.min(endMs-20,barOrigin+nxt*stepMs+40);
+    if(c==='x'){ notes.forEach((m,i)=>list.push({midi:m,start:at+i*6,end:at+60,vel:vel*.5,tb})); continue; }
+    const order=c==='D'?notes:notes.slice().reverse().slice(0,Math.min(notes.length,4));
+    order.forEach((m,i)=>list.push({midi:m,start:at+i*(c==='D'?11:9),end:until,vel:vel*(c==='U'?.8:1),tb}));
+  }
+}
+function previewStrum(){
+  audio();
+  const at=events[cur]?events[cur].ms:0, c=chordLine.filter(x=>x.ms<=at+1).pop()||chordLine[0];
+  const name=c?c.name:(keyMinor?SHARP_N[keyTonic]+'m':SHARP_N[keyTonic]);
+  const list=[]; addStrums(list,name,barOrigin,barOrigin+msPerMeasure*2-1,1.2);
+  const t0=ctx.currentTime+.08, sp=speed();
+  list.forEach(n=>tone(n.midi,t0+(n.start-barOrigin)/1000/sp,Math.max(.08,(n.end-n.start)/1000/sp),undefined,n.vel,false,n.tb));
+}
+
+// ---- the panel ----
+function renderChordPanel(){
+  const box=$('#chordsPanel'); if(!box) return;
+  $('#trVal').textContent=(transposeSemis>0?'+':'')+transposeSemis;
+  $('#capoLbl').hidden=!plucked();
+  $('#capoSel').value=String(capo);
+  $('#simplifyBtn').setAttribute('aria-pressed',String(simplifyOn));
+  const names=[...new Set(chordLine.map(c=>c.name))];
+  const grid=$('#chordGrid');
+  if(!names.length){ grid.innerHTML='<p class="small">No chord symbols in this score. Turn on "Suggest chords" to add some.</p>'; }
+  else grid.innerHTML=names.map(n=>{
+    const fs=plucked()&&frettedShape(n), v=chordVoicing(n,0);
+    const pic=fs?stringsSvg(fs,96):v?keysSvg(v.notes,v.bass):'';
+    const sub=fs&&capo?`<span class="cg-sub">${esc(fs.shapeName.replace(/b/g,'♭').replace(/#/g,'♯'))} shape</span>`:'';
+    return `<button type="button" class="cg-item" data-chord="${esc(n)}"><b>${esc(n.replace(/b(?=$|m|7|6|9|\/|s|a|d|M)/g,'♭').replace(/#/g,'♯'))}</b>${sub}<span class="cg-pic">${pic}</span></button>`;
+  }).join('');
+  const sb=$('#strumBox'); sb.hidden=!plucked();
+  if(plucked()){
+    const l=strumsForMeter(), p=currentStrum();
+    $('#strumSel').innerHTML=l.map(s=>`<option value="${s.id}"${s===p?' selected':''}>${esc(s.name)}</option>`).join('');
+    $('#strumDiagram').innerHTML=strumSvg(p);
+    $('#strumBpm').textContent=Math.round(tuneBpm*speedF)+' bpm';
+    $('#strumUse').checked=strumUse;
+  }
+}
+function wireChordPanel(){
+  $('#trDown').onclick=()=>{ transposeSemis=Math.max(-11,transposeSemis-1); reloadKeep(); };
+  $('#trUp').onclick=()=>{ transposeSemis=Math.min(11,transposeSemis+1); reloadKeep(); };
+  $('#trReset').onclick=()=>{ if(transposeSemis){ transposeSemis=0; reloadKeep(); } };
+  $('#capoSel').onchange=e=>{ capo=+e.target.value; renderChordPanel(); if(popState) fillChordPop(); };
+  $('#simplifyBtn').onclick=()=>{ simplifyOn=!simplifyOn; try{ localStorage.setItem('smc.simplify',simplifyOn?'on':'off'); }catch(e){} reloadKeep(); };
+  $('#chordGrid').onclick=e=>{ const b=e.target.closest('[data-chord]'); if(b) openChordPop(b,b.dataset.chord); };
+  $('#strumSel').onchange=e=>{ strumId=e.target.value; try{ localStorage.setItem('smc.strum',strumId); }catch(x){} renderChordPanel(); previewStrum(); };
+  $('#strumPlay').onclick=previewStrum;
+  $('#strumUse').onchange=e=>{ strumUse=e.target.checked; try{ localStorage.setItem('smc.strumUse',strumUse?'on':'off'); }catch(x){} };
 }
 
 // abcjs's automatic line wrapping numbers every bar even when asked for row starts only,
@@ -1129,7 +1288,8 @@ function trimBarNumbers(){
 function loadAbc(abc){
   stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
   const L=scoreLayout(); lastLayout=L.key;
-  const src=withBarNumbers(abc), opts0=/^Q:/m.test(src)?{}:{qpm:100};
+  if(abc!==lastAbcLoaded){ transposeSemis=0; lastAbcLoaded=abc; }
+  const src=withBarNumbers(simplifyOn?simplifySrc(abc):abc), opts0=/^Q:/m.test(src)?{}:{qpm:100};
   let v=renderScore(src,L), drawn=src;
   leadSheet=!!(v&&v.lines&&hasChordSymbols(v));
   if(chordsOn&&!leadSheet&&v&&v.lines&&v.lines.some(l=>l.staff)){
@@ -1137,10 +1297,10 @@ function loadAbc(abc){
     catch(e){ console.warn('chords',e); v=renderScore(src,L); }
   }
   partShift=0;
-  if(INST.part!=='both'&&v&&v.lines&&v.lines.some(l=>l.staff)){
+  if(v&&v.lines&&v.lines.some(l=>l.staff)){
     try{
-      partShift=partShiftFor(v,opts0);
-      const src2=withInstClef(drawn,v), vt=partShift+INST.transpose;
+      let src2=drawn, vt=transposeSemis;
+      if(INST.part!=='both'){ partShift=partShiftFor(v,opts0); src2=withInstClef(drawn,v); vt+=partShift+INST.transpose; }
       if(vt||src2!==drawn){ const v3=renderScore(src2,L,vt); if(v3&&v3.lines&&v3.lines.some(l=>l.staff)) v=v3; }
     }catch(e){ console.warn('instrument',e); }
   }
@@ -1171,7 +1331,7 @@ function loadAbc(abc){
     const measureWhole=meter.num/meter.den;
     const pitches=(e.midiPitches||[]).filter(p=>p.cmd!=='rest'&&typeof p.pitch==='number').map(p=>{
       const whole=typeof p.duration==='number'?p.duration:gap/msPerMeasure*measureWhole;
-      return {midi:p.pitch, ms:whole/measureWhole*msPerMeasure, whole, vol:typeof p.volume==='number'?p.volume:95};
+      return {midi:p.pitch+transposeSemis, ms:whole/measureWhole*msPerMeasure, whole, vol:typeof p.volume==='number'?p.volume:95};
     }).sort((a,b)=>b.midi-a.midi);
     return {ms:e.milliseconds, gap, els:(e.elements||[]).flat(), pitches, startChars:e.startCharArray||[e.startChar]};
   });
@@ -2772,5 +2932,5 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 })();
 
 // your instrument: build the picker and set up the page for it
-buildInstPicker(); applyInstUI();
+wireChordPanel(); buildInstPicker(); applyInstUI();
 $('#instSample').onclick=e=>{ const k=e.currentTarget.dataset.k; if(!k) return; try{ loadAbc(SAMPLES[k]); currentSong='s:'+k; fillSongs(); showView('score'); setStatus(''); }catch(err){ setStatus(esc(err.message),'err'); } };

@@ -138,6 +138,27 @@ select.btn{padding-right:10px}
 #score svg .abcjs-chord{font-weight:600;cursor:help}
 #score.hide-chords svg .abcjs-chord{display:none}
 #score svg .abcjs-chord{cursor:pointer}
+.chords-panel{padding:12px 14px 14px;display:grid;gap:12px}
+@media (min-width:980px){.chords-panel{grid-column:1}}
+.cpn-head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+.cpn-head h3{margin:0;font-size:1rem}
+.cpn-tools{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:.85rem;color:var(--muted)}
+.cpn-tr{display:inline-flex;align-items:center;gap:6px}
+.cpn-tr b{min-width:2.2em;text-align:center;color:var(--ink);font-variant-numeric:tabular-nums}
+#capoSel{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
+.cpn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.cg-item{display:grid;justify-items:center;gap:4px;padding:8px 6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;cursor:pointer}
+.cg-item:hover,.cg-item:focus-visible{border-color:var(--accent)}
+.cg-item b{font-size:1rem;color:var(--accent)}
+.cg-sub{font-size:.72rem;color:var(--muted)}
+.cg-pic svg{display:block;max-width:100%;height:auto}
+.strum{border-top:1px solid var(--line);padding-top:12px;display:grid;gap:8px}
+.strum-head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+#strumSel{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
+.strum-diagram{overflow-x:auto;background:var(--bg);border-radius:8px;padding:8px}
+.strum-diagram svg{display:block}
+.strum-key{margin:0}
+@media (max-width:640px){ .cpn-grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} #capoSel,#strumSel{font-size:16px} }
 .chord-pop{position:fixed;z-index:85;padding:12px 14px 14px;border-radius:12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 10px 30px rgb(0 0 0/.32);display:grid;gap:8px;justify-items:center;font-size:.85rem;line-height:1.45}
 .chord-pop[hidden]{display:none}
 .chord-pop .cp-close{position:absolute;top:6px;right:8px;border:0;background:none;font-size:1.3rem;line-height:1;color:var(--muted);padding:4px 6px;cursor:pointer}
@@ -396,6 +417,28 @@ select.btn{padding-right:10px}
         <div class="row"><button class="btn primary" id="applyBtn" type="button">Apply changes</button><span class="small" id="applyMsg"></span></div>
       </div>
       <div class="meta" id="meta"></div>
+    </section>
+
+    <section class="panel chords-panel" id="chordsPanel" aria-label="Chords and strumming">
+      <div class="cpn-head">
+        <h3>Chords in this song</h3>
+        <div class="cpn-tools">
+          <span class="cpn-tr" title="Move the whole song up or down (music, chords and sound)">Transpose <button type="button" class="btn mini" id="trDown" aria-label="Transpose down a semitone">−</button><b id="trVal">0</b><button type="button" class="btn mini" id="trUp" aria-label="Transpose up a semitone">+</button><button type="button" class="btn mini" id="trReset">Reset</button></span>
+          <label id="capoLbl" hidden title="Clamp a capo across the neck: chord shapes get easier, the sound stays the same">Capo <select id="capoSel"><option value="0">None</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option></select></label>
+          <button type="button" class="btn mini toggle" id="simplifyBtn" aria-pressed="false" title="Play plain chords: G7 becomes G, Cm6 becomes Cm, slash chords drop their bass note">Simplify chords</button>
+        </div>
+      </div>
+      <div class="cpn-grid" id="chordGrid"></div>
+      <div class="strum" id="strumBox" hidden>
+        <div class="strum-head"><b>Strumming pattern</b>
+          <select id="strumSel" aria-label="Strumming pattern"></select>
+          <button type="button" class="btn mini primary" id="strumPlay"><svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M7 4v16l13-8z"/></svg> Play</button>
+          <span class="small" id="strumBpm"></span>
+        </div>
+        <div class="strum-diagram" id="strumDiagram"></div>
+        <p class="small strum-key">↓ strum down (thick string to thin) · ↑ strum up · × mute the strings with your strumming hand · &gt; play that strum louder</p>
+        <label class="check" for="strumUse"><input type="checkbox" id="strumUse" checked> Strum this pattern for chord backing in the demo</label>
+      </div>
     </section>
 
     <aside class="panel lesson-panel" aria-label="Lesson">
