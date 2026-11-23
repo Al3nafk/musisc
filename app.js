@@ -159,9 +159,11 @@ async function loadPiano(){
     pianoState='ready';
   }catch(e){ pianoState='failed'; }
 }
-function tone(midi, when, dur, dest, vel=.6, pedal=false){
+function tone(midi, when, dur, dest, vel=.6, pedal=false, tb){
   const end=when+Math.max(.12,dur), out=dest||master;
   if(MIC.on&&!dest?.isMicTest) MIC.ignoreUntil=Math.max(MIC.ignoreUntil,end+0.35);
+  tb=tb||INST.sound;
+  if(tb!=='piano') return instTone(tb,midi,when,end,out,vel);
   const g=ctx.createGain(); g.connect(out);
   const near=Math.min(108,Math.max(21,Math.round(midi/3)*3)), buf=pianoState==='ready'&&pianoBuf[near];
   if(buf){
@@ -194,9 +196,290 @@ function tone(midi, when, dur, dest, vel=.6, pedal=false){
 }
 function hear(midis, dur=.7, pedal=false){ audio(); midis.forEach(m=>tone(m,ctx.currentTime+.02,dur,undefined,.6,pedal)); }
 
+/* ---------- your instrument ----------
+   Musisc can coach any band instrument, not only piano. Picking one changes:
+   - the sound of the demo and of "Hear it" (synthesised; the piano keeps its recorded samples),
+   - the part you learn: piano and keyboard play everything; melody instruments take the tune (the top
+     line) and the bass guitar takes the bass line, moved by octaves into the instrument's range, while
+     the rest of the score plays softly on piano as backing,
+   - the notes you read: transposing instruments (B♭ clarinet, trumpet and tenor sax, E♭ alto sax,
+     guitars and bass sounding an octave lower) see the score at their written pitch, and bass-clef
+     instruments get a bass clef on one-line music,
+   - the lesson wording and the guide under the score: a fretboard (guitar, bass, ukulele), a
+     fingerboard (violin, cello), valves (trumpet), slide positions (trombone) or the register to
+     play in (flute, clarinet, saxophones, voice). Mic practice listens for your instrument's notes. */
+const INSTRUMENTS=[
+  {id:'piano',name:'Piano',group:'Keys',part:'both',view:'piano',sound:'piano',transpose:0,range:[21,108]},
+  {id:'keys',name:'Keyboard / synth',group:'Keys',part:'both',view:'piano',sound:'epiano',transpose:0,range:[28,103]},
+  {id:'guitar',name:'Acoustic guitar',group:'Strings',part:'top',view:'fret',sound:'guitar',transpose:12,range:[40,83],strings:[64,59,55,50,45,40],frets:15,
+    note:'Guitar music is written an octave higher than it sounds, so the score shows guitar pitch.'},
+  {id:'eguitar',name:'Electric guitar',group:'Strings',part:'top',view:'fret',sound:'eguitar',transpose:12,range:[40,86],strings:[64,59,55,50,45,40],frets:17,
+    note:'Guitar music is written an octave higher than it sounds, so the score shows guitar pitch.'},
+  {id:'bass',name:'Bass guitar',group:'Strings',part:'bass',view:'fret',sound:'bass',transpose:12,range:[28,67],strings:[43,38,33,28],frets:15,clef:'bass',
+    note:'You get the bass line, in bass clef, written an octave higher than it sounds as bass music always is.'},
+  {id:'uke',name:'Ukulele',group:'Strings',part:'top',view:'fret',sound:'uke',transpose:0,range:[60,81],strings:[69,64,60,67],frets:12,
+    note:'Standard G-C-E-A tuning with the high G string.'},
+  {id:'violin',name:'Violin',group:'Strings',part:'top',view:'fret',fretless:true,sound:'violin',transpose:0,range:[55,96],strings:[76,69,62,55],frets:7},
+  {id:'cello',name:'Cello',group:'Strings',part:'top',view:'fret',fretless:true,sound:'cello',transpose:0,range:[36,72],strings:[57,50,43,36],frets:7,clef:'bass'},
+  {id:'flute',name:'Flute',group:'Woodwind',part:'top',view:'wind',sound:'flute',transpose:0,range:[60,93]},
+  {id:'clarinet',name:'Clarinet (B♭)',group:'Woodwind',part:'top',view:'wind',sound:'clarinet',transpose:2,range:[50,86],
+    note:'A B♭ clarinet sounds a tone lower than written, so the score is shown a tone higher.'},
+  {id:'asax',name:'Alto sax (E♭)',group:'Woodwind',part:'top',view:'wind',sound:'sax',transpose:9,range:[49,80],
+    note:'An E♭ alto sax sounds a 6th lower than written, so the score is shown at alto sax pitch.'},
+  {id:'tsax',name:'Tenor sax (B♭)',group:'Woodwind',part:'top',view:'wind',sound:'sax',transpose:14,range:[44,75],
+    note:'A B♭ tenor sax sounds a 9th lower than written, so the score is shown at tenor sax pitch.'},
+  {id:'trumpet',name:'Trumpet (B♭)',group:'Brass',part:'top',view:'valves',sound:'trumpet',transpose:2,range:[52,82],
+    note:'A B♭ trumpet sounds a tone lower than written, so the score is shown a tone higher.'},
+  {id:'trombone',name:'Trombone',group:'Brass',part:'top',view:'slide',sound:'trombone',transpose:0,range:[40,72],clef:'bass'},
+  {id:'voice',name:'Voice (singing)',group:'Voice',part:'top',view:'voice',sound:'voice',transpose:0,range:[53,79]},
+];
+let INST=INSTRUMENTS[0];
+try{ INST=INSTRUMENTS.find(i=>i.id===localStorage.getItem('smc.instrument'))||INSTRUMENTS[0]; }catch(e){}
+let partShift=0;
+
+// ---- sounds ----
+const ksCache={};
+function ksBuffer(midi,kind){ // Karplus-Strong plucked string, rendered once per note and kept
+  const key=kind+midi; if(ksCache[key]) return ksCache[key];
+  const sr=ctx.sampleRate, f=440*Math.pow(2,(midi-69)/12);
+  const len=Math.floor(sr*(kind==='uke'?1.3:kind==='bass'?2.4:2.8)), N=Math.max(2,Math.round(sr/f-.5));
+  const buf=ctx.createBuffer(1,len,sr), d=buf.getChannelData(0), ring=new Float32Array(N);
+  let lp=0; const soft=kind==='bass'?.45:kind==='guitar'?.25:kind==='uke'?.2:.1;
+  for(let i=0;i<N;i++){ lp=lp*soft+(Math.random()*2-1)*(1-soft); ring[i]=lp; }
+  const damp=kind==='bass'?.9975:kind==='uke'?.991:kind==='eguitar'?.9985:.996;
+  for(let i=0,k=0;i<len;i++){ const a=ring[k], b=ring[(k+1)%N]; d[i]=a; ring[k]=damp*.5*(a+b); k=(k+1)%N; }
+  const res={buf, rate:f/(sr/(N+.5))}; ksCache[key]=res; return res;
+}
+const SYNTH={
+  violin:{wave:'sawtooth',lp:f=>Math.min(6000,f*6),q:.8,vib:.006,att:.09,sus:.85,rel:.18,level:.2},
+  cello:{wave:'sawtooth',lp:f=>Math.min(3600,f*6),q:.8,vib:.005,att:.11,sus:.85,rel:.26,level:.26},
+  flute:{wave:'sine',lp:f=>Math.min(9000,f*4),q:.5,vib:.004,att:.07,sus:.9,rel:.12,level:.42,breath:.05,second:.25},
+  clarinet:{wave:'square',lp:f=>Math.min(3200,f*4.5),q:.6,vib:0,att:.04,sus:.92,rel:.1,level:.14},
+  sax:{wave:'sawtooth',lp:f=>Math.min(3400,f*4),q:2.2,vib:.004,att:.035,sus:.9,rel:.12,level:.17},
+  trumpet:{wave:'sawtooth',lp:f=>Math.min(7000,f*7),q:1.2,vib:.002,att:.03,sus:.9,rel:.1,level:.17,brass:1.3},
+  trombone:{wave:'sawtooth',lp:f=>Math.min(3800,f*5),q:1,vib:.002,att:.05,sus:.9,rel:.14,level:.22,brass:1},
+  voice:{wave:'sawtooth',lp:f=>4000,q:.5,vib:.007,att:.08,sus:.9,rel:.2,level:.5,formants:[[800,1,6],[1150,.5,8],[2900,.22,10]]},
+};
+function instTone(tb,midi,when,end,out,vel){
+  const f=440*Math.pow(2,(midi-69)/12), g=ctx.createGain(); g.connect(out);
+  if(tb==='guitar'||tb==='eguitar'||tb==='bass'||tb==='uke'){
+    const ks=ksBuffer(midi,tb), src=ctx.createBufferSource(); src.buffer=ks.buf; src.playbackRate.value=ks.rate;
+    let node=src;
+    if(tb==='eguitar'){ const sh=ctx.createWaveShaper(), c=new Float32Array(256); for(let i=0;i<256;i++){ const x=i/128-1; c[i]=Math.tanh(x*2.2)/Math.tanh(2.2); } sh.curve=c; const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=3600; src.connect(sh); sh.connect(lp); node=lp; }
+    if(tb==='bass'){ const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1400; src.connect(lp); node=lp; }
+    node.connect(g);
+    const lvl=vel*(tb==='bass'?1.5:tb==='eguitar'?.7:1.1);
+    g.gain.setValueAtTime(lvl,when); g.gain.setTargetAtTime(0,end,tb==='uke'?.06:.09);
+    src.start(when); src.stop(Math.min(when+ks.buf.duration/ks.rate,end+.8));
+    return;
+  }
+  if(tb==='epiano'){ // two soft sines and a quick bell partial: an electric-piano tone
+    [[1,1,1.6],[2,.35,.9],[7.02,.12,.12]].forEach(([h,a,dec])=>{ if(f*h>14000) return; const o=ctx.createOscillator(), og=ctx.createGain(); o.frequency.value=f*h; og.gain.setValueAtTime(a*vel*.45,when); og.gain.setTargetAtTime(a*vel*.12,when+.01,dec); og.gain.setTargetAtTime(0,end,.12); o.connect(og); og.connect(g); o.start(when); o.stop(end+1); });
+    g.gain.value=1; return;
+  }
+  const s=SYNTH[tb]||SYNTH.flute, osc=ctx.createOscillator(); osc.type=s.wave; osc.frequency.value=f;
+  const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=s.q; lp.frequency.value=s.lp(f);
+  if(s.brass){ lp.frequency.setValueAtTime(f*1.4,when); lp.frequency.exponentialRampToValueAtTime(s.lp(f),when+.07*s.brass); }
+  if(s.formants){ s.formants.forEach(([fr,a,q])=>{ const bp=ctx.createBiquadFilter(), bg=ctx.createGain(); bp.type='bandpass'; bp.frequency.value=fr; bp.Q.value=q; bg.gain.value=a; osc.connect(bp); bp.connect(bg); bg.connect(lp); }); }
+  else osc.connect(lp);
+  lp.connect(g);
+  const stops=[osc];
+  if(s.second){ const o2=ctx.createOscillator(), g2=ctx.createGain(); o2.type='triangle'; o2.frequency.value=f*2; g2.gain.value=s.second; o2.connect(g2); g2.connect(lp); stops.push(o2); }
+  if(s.vib){ const lfo=ctx.createOscillator(), lg=ctx.createGain(); lfo.frequency.value=5.3; lg.gain.setValueAtTime(0,when); lg.gain.linearRampToValueAtTime(f*s.vib,when+.4); lfo.connect(lg); stops.forEach(o=>lg.connect(o.frequency)); stops.push(lfo); }
+  if(s.breath){ const nb=ctx.createBuffer(1,ctx.sampleRate*.5,ctx.sampleRate), nd=nb.getChannelData(0); for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+    const ns=ctx.createBufferSource(); ns.buffer=nb; ns.loop=true; const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=f*2; bp.Q.value=1.5; const ng=ctx.createGain(); ng.gain.value=s.breath; ns.connect(bp); bp.connect(ng); ng.connect(g); stops.push(ns); }
+  const top=vel*s.level;
+  g.gain.setValueAtTime(0,when); g.gain.linearRampToValueAtTime(top,when+s.att); g.gain.setTargetAtTime(top*s.sus,when+s.att,.3); g.gain.setTargetAtTime(0,end,s.rel);
+  stops.forEach(o=>{ o.start(when); o.stop(end+s.rel*6); });
+}
+
+// ---- the part you play ----
+function pickPart(ev,maxV){ // the note of this moment that belongs to your part, or null
+  if(!ev.pitches.length) return null;
+  const cls=e=>(e&&e.getAttribute&&e.getAttribute('class'))||'';
+  if(INST.part==='top'){ if(!ev.els.some(e=>/abcjs-note/.test(cls(e))&&/\babcjs-v0\b/.test(cls(e)))) return null; return ev.pitches[0]; }
+  const re=new RegExp('\\babcjs-v'+maxV+'\\b');
+  if(!ev.els.some(e=>/abcjs-note/.test(cls(e))&&re.test(cls(e)))) return null;
+  return ev.pitches[ev.pitches.length-1];
+}
+function maxVoice(evs){ let m=0; evs.forEach(ev=>ev.els.forEach(e=>{ const c=(e&&e.getAttribute&&e.getAttribute('class'))||'', x=c.match(/\babcjs-v(\d+)/); if(x) m=Math.max(m,+x[1]); })); return m; }
+// the octave shift that puts most of the part inside the instrument's range
+function fitOctave(midis){
+  if(!midis.length) return 0;
+  // most notes inside the range first; among nearly-as-good octaves, the one nearest the middle of the range
+  const [lo,hi]=INST.range, mid=(lo+hi)/2, sorted=midis.slice().sort((a,b)=>a-b), med=sorted[Math.floor(sorted.length/2)];
+  const opts=[-3,-2,-1,0,1,2,3].map(k=>({k, n:midis.filter(m=>m+12*k>=lo&&m+12*k<=hi).length/midis.length, d:Math.abs(med+12*k-mid)}));
+  const top=Math.max(...opts.map(o=>o.n));
+  return opts.filter(o=>o.n>=top-.03).sort((a,b)=>a.d-b.d)[0].k*12;
+}
+// quick look at the rendered score to choose the octave before drawing it at written pitch
+function partShiftFor(v,opts){
+  try{ v.setUpAudio(opts); }catch(e){}
+  const nt=(new ABCJS.TimingCallbacks(v,opts).noteTimings||[]).filter(e=>e.type==='event');
+  const evs=nt.map(e=>({els:(e.elements||[]).flat(), pitches:(e.midiPitches||[]).filter(p=>p.cmd!=='rest'&&typeof p.pitch==='number').map(p=>({midi:p.pitch})).sort((a,b)=>b.midi-a.midi)}));
+  const mv=maxVoice(evs);
+  return fitOctave(evs.map(ev=>pickPart(ev,mv)).filter(Boolean).map(p=>p.midi));
+}
+function withInstClef(src,v){
+  if(!INST.clef||!v||v.lines.find(l=>l.staff).staff.length!==1) return src;
+  const set=line=>/clef=\S+/.test(line)?line.replace(/clef=\S+/,'clef='+INST.clef):line+' clef='+INST.clef;
+  let out=src.replace(/^(K:[^\n%]*)/m,(m)=>set(m.replace(/\s+$/,'')));
+  out=out.replace(/^(V:[^\n%]*)/gm,(m)=>set(m.replace(/\s+$/,'')));
+  return out;
+}
+function applyPart(evs){ // keeps only your part as the notes to learn; the rest becomes backing
+  if(INST.part==='both'){ evs.forEach(ev=>{ ev.accomp=[]; }); return; }
+  const mv=maxVoice(evs);
+  evs.forEach(ev=>{
+    const p=pickPart(ev,mv), all=ev.pitches;
+    ev.accomp=p?all.filter(x=>x!==p):all.slice();
+    ev.pitches=p?[Object.assign({},p,{midi:p.midi+partShift,orig:p.midi})]:[];
+    ev.backingOnly=!p&&all.length>0;
+  });
+}
+
+// ---- picker ----
+function buildInstPicker(){
+  const box=$('#instList'); if(!box) return;
+  const groups=[...new Set(INSTRUMENTS.map(i=>i.group))];
+  box.innerHTML=groups.map(g=>`<div class="inst-group"><span class="inst-g">${g}</span>${INSTRUMENTS.filter(i=>i.group===g).map(i=>`<button type="button" class="btn mini toggle" data-inst="${i.id}" aria-pressed="${i===INST}">${esc(i.name)}</button>`).join('')}</div>`).join('');
+  box.onclick=e=>{ const b=e.target.closest('[data-inst]'); if(b) setInstrument(b.dataset.inst); };
+}
+function setInstrument(id){
+  const next=INSTRUMENTS.find(i=>i.id===id)||INSTRUMENTS[0];
+  if(next===INST&&$('#instList [aria-pressed="true"]')) return;
+  INST=next; try{ localStorage.setItem('smc.instrument',INST.id); }catch(e){}
+  document.querySelectorAll('#instList [data-inst]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.inst===INST.id)));
+  applyInstUI();
+  if(vis){ if(play) stopDemo(); if(MIC.on) micStop(); reloadKeep(); }
+}
+function instNoun(){ return INST.id==='voice'?'voice':INST.name.replace(/ \(.*\)$/,'').replace(/^Acoustic |^Electric /,'').toLowerCase(); }
+function applyInstUI(){
+  const piano=INST.view==='piano';
+  const part=INST.part==='both'?'You play every note of the score.':INST.part==='bass'?'You play the bass line; the rest plays softly as backing.':'You play the melody (the top line); the rest plays softly as backing.';
+  $('#instNote').textContent=part+(INST.note?' '+INST.note:'');
+  $('#kbScroll').hidden=!piano;
+  $('#instView').hidden=piano;
+  $('#rollBtn').style.display=piano?'':'none';
+  const lbl=$('#dockLabel');
+  lbl.innerHTML=piano?'<i class="sw r"></i>Right hand <i class="sw l"></i>Left hand · notes fall onto the key to press':esc(INST.name)+' guide: where to play the current note';
+  const pc=$('#practice'); if(pc) pc.closest('label').hidden=!piano;
+  $('#micBtn').title=`Play on your own ${piano?'piano':instNoun()}: Musisc listens and guides you`;
+  $('#pedalLbl').hidden=!(INST.sound==='piano');
+  if(typeof setPiano==='function') setPiano(pianoOpen);
+  if(!piano) requestAnimationFrame(()=>drawInstView(events[cur]));
+}
+
+// ---- the guide under the score ----
+const TRUMPET_VALVES={54:'123',55:'13',56:'23',57:'12',58:'1',59:'2',60:'',61:'123',62:'13',63:'23',64:'12',65:'1',66:'2',67:'',68:'23',69:'12',70:'1',71:'2',72:'',73:'12',74:'1',75:'2',76:'',77:'1',78:'2',79:'',80:'23',81:'12',82:'1',83:'2',84:''};
+function fretSpots(m){ return INST.strings.map((s,i)=>({string:i,fret:m-s})).filter(x=>x.fret>=0&&x.fret<=(INST.fretless?12:INST.frets)); }
+function bestSpot(m){ const sp=fretSpots(m); if(!sp.length) return null; return sp.reduce((a,b)=>b.fret<a.fret?b:a); }
+function slidePos(m){ const P=[46,53,58,62,65,68,70,72,74,75,77]; let best=null; P.forEach(p=>{ const d=p-m; if(d>=0&&d<=6&&(best==null||d<best)) best=d; }); return best==null?null:best+1; }
+function stringName(i){ return info(INST.strings[i]).name.replace(/[0-9]/g,''); }
+function fingerFor(fret){
+  if(fret===0) return 'open string, no finger';
+  if(INST.id==='violin') return {1:'low 1st finger',2:'1st finger',3:'low 2nd finger',4:'2nd finger',5:'3rd finger',6:'4th finger (or high 3rd)',7:'4th finger'}[fret]||'a higher position';
+  if(INST.id==='cello') return {1:'1st finger, stretched back',2:'1st finger',3:'2nd finger',4:'3rd finger',5:'4th finger',6:'shift up a position',7:'shift up a position'}[fret]||'a higher position';
+  if(fret<=4) return `finger ${fret}`;
+  return `a higher position (move your hand up the neck)`;
+}
+function regInfo(w){ // w = written midi
+  const id=INST.id;
+  if(id==='flute') return w<=61?['Low register','relaxed lips and slow, warm air']:w<=73?['Middle register','mostly the same fingers as the low octave, with faster, narrower air']:['High register','fast, focused air; some notes use special fingerings'];
+  if(id==='clarinet') return w<=66?['Low (chalumeau) register','no register key; cover the holes fully']:w<=70?['Throat tones','few fingers down; keep the air steady']:w<=84?['Upper (clarion) register','press the register key with your left thumb and finger the note a 12th lower']:['Altissimo','very high; special fingerings'];
+  if(id==='asax'||id==='tsax') return w<=73?['Low register','no octave key']:w<=90?['Upper register','press the octave key with your left thumb; same fingers as an octave lower']:['Altissimo','very high; special fingerings'];
+  if(id==='voice') return w<60?['Low','sing it gently, it is low for most voices']:w<=74?['Comfortable middle','most voices can sing this easily']:['High','take a good breath and keep it light'];
+  return ['',''];
+}
+function drawInstView(ev){
+  const box=$('#instView'); if(!box||INST.view==='piano') return;
+  let e=ev; if(e&&!e.pitches.length){ for(let j=cur;j>=0;j--) if(events[j]&&events[j].pitches.length){ e=events[j]; break; } }
+  const p=e&&e.pitches[0];
+  if(!p){ box.innerHTML='<div class="iv-text">No note to play here.</div>'; return; }
+  const m=p.midi, w=m+INST.transpose, n=info(m);
+  const out=m<INST.range[0]||m>INST.range[1];
+  let svg='', text='';
+  if(INST.view==='fret'){
+    const S=INST.strings.length, F=INST.fretless?7:Math.min(12,INST.frets), W=640, H=28+S*22, x0=44, fw=(W-x0-14)/F;
+    const best=bestSpot(m), spots=fretSpots(m);
+    svg+=`<rect x="${x0}" y="14" width="${W-x0-14}" height="${(S-1)*22}" rx="3" fill="var(--board)"/>`;
+    if(!INST.fretless) [3,5,7,9,12].filter(k=>k<=F).forEach(k=>{ const cx=x0+(k-.5)*fw; svg+=k===12?`<circle cx="${cx}" cy="${14+(S-1)*22*.3}" r="4" fill="var(--inlay)"/><circle cx="${cx}" cy="${14+(S-1)*22*.7}" r="4" fill="var(--inlay)"/>`:`<circle cx="${cx}" cy="${14+(S-1)*11}" r="4" fill="var(--inlay)"/>`; });
+    for(let k=0;k<=F;k++){ const x=x0+k*fw; svg+=`<line x1="${x}" x2="${x}" y1="14" y2="${14+(S-1)*22}" stroke="${k===0?'var(--ink)':INST.fretless?'transparent':'var(--fret)'}" stroke-width="${k===0?4:2}"/>`; if(k>0) svg+=`<text x="${x-fw/2}" y="${H-2}" font-size="10" text-anchor="middle" fill="var(--muted)">${INST.fretless?k:k}</text>`; }
+    for(let i=0;i<S;i++){ const y=14+i*22; svg+=`<line x1="${x0}" x2="${W-14}" y1="${y}" y2="${y}" stroke="var(--string)" stroke-width="${1+i*.45}"/><text x="${x0-12}" y="${y+4}" font-size="12" font-weight="600" text-anchor="end" fill="var(--muted)">${esc(stringName(i))}</text>`; }
+    spots.forEach(s=>{ if(s.fret>F) return; const isB=best&&s.string===best.string; const x=s.fret===0?x0-24+6:x0+(s.fret-.5)*fw, y=14+s.string*22;
+      svg+=s.fret===0?`<circle cx="${x0-26}" cy="${y}" r="7" fill="none" stroke="${isB?'var(--now)':'var(--muted)'}" stroke-width="2.5" opacity="${isB?1:.5}"/>`:`<circle cx="${x}" cy="${y}" r="${isB?9:7}" fill="${isB?'var(--now)':'var(--muted)'}" opacity="${isB?1:.35}"/>`; });
+    svg=`<svg viewBox="0 0 ${W} ${H}" class="iv-svg" role="img" aria-label="${esc(INST.name)} fingerboard">${svg}</svg>`;
+    text=best?`<b>${esc(n.full)}</b>: ${esc(stringName(best.string))} string, ${best.fret===0?'open':(INST.fretless?'about '+best.fret+' semitone'+(best.fret>1?'s':'')+' up':'fret '+best.fret)} · ${esc(fingerFor(best.fret))}`:`<b>${esc(n.full)}</b> is out of reach on this ${instNoun()}.`;
+  } else if(INST.view==='valves'){
+    const v=TRUMPET_VALVES[w];
+    [1,2,3].forEach((k,i)=>{ const down=v!=null&&v.includes(String(k)); svg+=`<g transform="translate(${40+i*70},10)"><rect x="-16" y="0" width="32" height="70" rx="8" fill="var(--board)"/><circle cx="0" cy="${down?48:22}" r="14" fill="${down?'var(--now)':'var(--panel)'}" stroke="var(--ink)" stroke-width="2"/><text x="0" y="${down?52:26}" font-size="13" font-weight="700" text-anchor="middle" fill="${down?'#fff':'var(--ink)'}">${k}</text></g>`; });
+    svg=`<svg viewBox="0 0 220 90" class="iv-svg small" role="img" aria-label="Trumpet valves">${svg}</svg>`;
+    text=v==null?`<b>${esc(n.full)}</b> is outside the usual trumpet chart.`:`<b>${esc(n.full)}</b>: ${v===''?'open, no valves down':'valves '+v.split('').join(' + ')+' down'}. Same fingering can give several notes; your lips and air choose which.`;
+  } else if(INST.view==='slide'){
+    const pos=slidePos(m);
+    for(let k=1;k<=7;k++){ const x=30+(k-1)*60; svg+=`<line x1="${x}" x2="${x}" y1="20" y2="54" stroke="var(--fret)" stroke-width="2"/><text x="${x}" y="72" font-size="12" text-anchor="middle" fill="${k===pos?'var(--now)':'var(--muted)'}" font-weight="${k===pos?700:400}">${k}</text>`; }
+    svg+=`<rect x="10" y="30" width="${pos?30+(pos-1)*60:20}" height="14" rx="7" fill="var(--board)" stroke="var(--ink)"/>`;
+    if(pos) svg+=`<circle cx="${30+(pos-1)*60}" cy="37" r="11" fill="var(--now)"/>`;
+    svg=`<svg viewBox="0 0 420 80" class="iv-svg" role="img" aria-label="Trombone slide position">${svg}</svg>`;
+    text=pos?`<b>${esc(n.full)}</b>: slide position ${pos}${pos===1?' (slide all the way in)':pos>=6?' (arm stretched out)':''}.`:`<b>${esc(n.full)}</b> is outside the usual slide chart.`;
+  } else { // wind and voice: where the note sits in your range
+    const [lo,hi]=INST.range.map(x=>x+INST.transpose), pct=Math.max(0,Math.min(1,(w-lo)/(hi-lo))), [reg,tip]=regInfo(w);
+    svg=`<svg viewBox="0 0 420 46" class="iv-svg" role="img" aria-label="Where the note sits in the ${esc(INST.name)} range"><rect x="10" y="16" width="400" height="12" rx="6" fill="var(--board)"/><circle cx="${10+pct*400}" cy="22" r="10" fill="var(--now)"/><text x="10" y="44" font-size="11" fill="var(--muted)">${esc(info(lo-INST.transpose).full)} (lowest)</text><text x="410" y="44" font-size="11" text-anchor="end" fill="var(--muted)">${esc(info(hi-INST.transpose).full)} (highest)</text></svg>`;
+    text=`<b>${esc(n.full)}</b>${INST.id==='voice'?' · sing "'+SOLF[n.letter]+'"':''}${reg?' · '+esc(reg)+': '+esc(tip):''}.`;
+  }
+  if(out) text+=` <span class="iv-warn">This note is outside the normal ${esc(INST.name)} range.</span>`;
+  box.innerHTML=svg+`<div class="iv-text">${text}</div>`;
+}
+
+// ---- the lesson, worded for your instrument ----
+function renderInstLesson(ev){
+  $('#counter').textContent=`Step ${cur+1} of ${events.length}`;
+  let e=ev, holding=false;
+  if(!ev.pitches.length&&ev.backingOnly){ for(let j=cur;j>=0;j--) if(events[j].pitches.length){ e=events[j]; holding=true; break; } }
+  drawInstView(ev);
+  if(!e.pitches.length){
+    const beats=ev.gap/msPerMeasure*meter.num;
+    $('#bigName').innerHTML='Rest'; $('#bigName').style.fontSize='2.4rem';
+    $('#heroTitle').textContent='A rest: silence'; $('#heroSub').textContent=`Stay silent for ${fmtBeats(beats)}.`;
+    $('#chips').innerHTML=''; $('#staffBox').innerHTML='';
+    $('#steps').innerHTML=`<li><span class="n">1</span><span><b>Wait.</b> Keep counting the beat (${fmtBeats(beats)}) so you come back in on time.</span></li>`;
+    $('#dockNow').textContent='Rest'; return;
+  }
+  $('#bigName').style.fontSize='';
+  const p=e.pitches[0], n=info(p.midi), clef=INST.clef||(clefs.length>1&&INST.part==='bass'?'bass':clefs[0]||'treble'), s=stepOf(n,clef);
+  const dn=durName(p.whole), beats=p.whole*meter.den, noun=instNoun();
+  $('#bigName').innerHTML=esc(n.name)+`<small>${n.oct}</small>`;
+  $('#heroTitle').textContent=holding?`Keep holding ${n.full}`:INST.id==='voice'?`Sing ${n.name} (${SOLF[n.letter]})`:`${n.name} on the ${noun}`;
+  $('#heroSub').textContent=holding?'The backing moves here while your note rings on.':`${dn?dn[0].toUpperCase()+dn.slice(1)+' note':'Note'}: hold for ${fmtBeats(beats)}`;
+  const concert=INST.transpose?(()=>{ const t=INST.transpose; INST.transpose=0; const c=info(p.midi).full; INST.transpose=t; return c; })():'';
+  const chips=[n.full, clef==='bass'?'Bass clef':'Treble clef', INST.name];
+  if(concert&&INST.transpose!==12) chips.push('Sounds as '+concert);
+  if(p.midi<INST.range[0]||p.midi>INST.range[1]) chips.push('Out of range');
+  $('#chips').innerHTML=chips.map(c=>`<span class="chip">${esc(c)}</span>`).join('');
+  $('#staffBox').innerHTML=staffSvg(s,clef,n,p.whole);
+  const steps=[];
+  const lines=clef==='bass'?'G B D F A ("Good Boys Do Fine Always")':'E G B D F ("Every Good Boy Does Fine")';
+  const spaces=clef==='bass'?'A C E G ("All Cows Eat Grass")':'F A C E (spells "FACE")';
+  let read=`The note head sits ${posText(s)}. On the ${clef} staff the lines from the bottom are ${lines}; the spaces are ${spaces}.`;
+  if(n.acc) read+=` The ${n.acc==='sharp'?'sharp (♯)':'flat (♭)'} ${keyHas(n)?'comes from the key signature':'is written next to the note'}.`;
+  steps.push(['Read it',read]);
+  let find='';
+  if(INST.view==='fret'){ const b=bestSpot(p.midi); find=b?`Play the ${stringName(b.string)} string ${b.fret===0?'open (no finger)':INST.fretless?`with your ${fingerFor(b.fret)}`:`at fret ${b.fret}, ${fingerFor(b.fret)}`}. The guide below shows the spot (other places that give the same note are shown faintly).`:`This note is out of reach here; skip it or play it an octave ${p.midi<INST.range[0]?'higher':'lower'}.`; }
+  else if(INST.view==='valves'){ const v=TRUMPET_VALVES[p.midi+INST.transpose]; find=v==null?'This note is outside the usual trumpet chart.':`${v===''?'Keep all valves up (open)':'Press valves '+v.split('').join(' + ')}, then buzz the pitch: ${p.midi+INST.transpose>=72?'higher notes need faster air and firmer lips':p.midi+INST.transpose<=60?'low notes need relaxed lips and lots of air':'a steady, comfortable buzz'}.`; }
+  else if(INST.view==='slide'){ const pos=slidePos(p.midi); find=pos?`Move the slide to position ${pos} and buzz the pitch.`:'This note is outside the usual slide chart.'; }
+  else { const [reg,tip]=regInfo(p.midi+INST.transpose); find=INST.id==='voice'?`Hear it first, then sing "${SOLF[n.letter]}" on the same pitch. ${reg}: ${tip}.`:`${reg}: ${tip}. Check a fingering chart for ${n.full} if you are unsure.`; }
+  steps.push([INST.id==='voice'?'Find the pitch':'Find it on the '+noun, find]);
+  let count=`${dn?'A '+dn+' note':'This note'} lasts ${fmtBeats(beats)} in ${meter.num}/${meter.den} time.`;
+  if(beats>=1) count+=` Count "${Array.from({length:Math.max(1,Math.round(beats))},(_,i)=>i+1).join(', ')}" while it sounds.`;
+  steps.push(['Count it',count]);
+  steps.push(['Play it',`Press "Hear it", then ${INST.id==='voice'?'sing':'play'} it and press Next. Or press "Practice with mic" and Musisc will listen to your ${noun}.`]);
+  $('#steps').innerHTML=steps.map((t,i)=>`<li><span class="n">${i+1}</span><span><b>${t[0]}.</b> ${esc(t[1])}</span></li>`).join('');
+  $('#dockNow').textContent='Now: '+n.full;
+}
+
 /* ---------- music helpers ---------- */
 function info(midi){
-  const pc=((midi%12)+12)%12, oct=Math.floor(midi/12)-1, name=(keyPref==='flat'?FL:SH)[pc];
+  const w=midi+(INST.transpose||0), pc=((w%12)+12)%12, oct=Math.floor(w/12)-1, name=(keyPref==='flat'?FL:SH)[pc];
   return {midi,pc,oct,name,letter:name[0],acc:name.length>1?(name[1]==='♯'?'sharp':'flat'):null,full:name+oct};
 }
 function clefFor(midi){ if(clefs.length===1) return clefs[0]; return midi>=60?'treble':'bass'; }
@@ -257,11 +540,11 @@ addEventListener('resize',()=>{ clearTimeout(relayoutT); relayoutT=setTimeout(()
 },300); });
 // 4 bars a row: abcjs drops to fewer bars on busy music, so redraw wider (the score is then
 // scaled down to fit the screen) until no row except the last has fewer than 4 bars.
-function renderScore(src,L){
+function renderScore(src,L,vt=0){
   let v=null;
   for(const k of [1,1.4,1.9,2.6]){
     const out=ABCJS.renderAbc('score', src, {add_classes:true, responsive:'resize', staffwidth:Math.round(L.width*k),
-      wrap:{minSpacing:1.4,maxSpacing:3.2,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
+      wrap:{minSpacing:1.4,maxSpacing:3.2,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4, visualTranspose:vt||0});
     v=out&&out[0];
     if(!v||!v.lines) break;
     const rows=v.lines.filter(l=>l.staff).map(l=>(l.staff[0].voices[0]||[]).filter(e=>e.el_type==='bar').length);
@@ -528,11 +811,19 @@ function loadAbc(abc){
   stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
   const L=scoreLayout(); lastLayout=L.key;
   const src=withBarNumbers(abc), opts0=/^Q:/m.test(src)?{}:{qpm:100};
-  let v=renderScore(src,L);
+  let v=renderScore(src,L), drawn=src;
   leadSheet=!!(v&&v.lines&&hasChordSymbols(v));
   if(chordsOn&&!leadSheet&&v&&v.lines&&v.lines.some(l=>l.staff)){
-    try{ const withCh=addChords(v,src,opts0); if(withCh){ const v2=renderScore(withCh,L); if(v2&&v2.lines&&v2.lines.some(l=>l.staff)) v=v2; else v=renderScore(src,L); } }
+    try{ const withCh=addChords(v,src,opts0); if(withCh){ const v2=renderScore(withCh,L); if(v2&&v2.lines&&v2.lines.some(l=>l.staff)){ v=v2; drawn=withCh; } else v=renderScore(src,L); } }
     catch(e){ console.warn('chords',e); v=renderScore(src,L); }
+  }
+  partShift=0;
+  if(INST.part!=='both'&&v&&v.lines&&v.lines.some(l=>l.staff)){
+    try{
+      partShift=partShiftFor(v,opts0);
+      const src2=withInstClef(drawn,v), vt=partShift+INST.transpose;
+      if(vt||src2!==drawn){ const v3=renderScore(src2,L,vt); if(v3&&v3.lines&&v3.lines.some(l=>l.staff)) v=v3; }
+    }catch(e){ console.warn('instrument',e); }
   }
   if(!v||!v.lines||!v.lines.some(l=>l.staff)) throw new Error('No music found in that notation.');
   trimBarNumbers(); hideChordTip(); wireChordTips(); updateChordBtn();
@@ -565,6 +856,7 @@ function loadAbc(abc){
     }).sort((a,b)=>b.midi-a.midi);
     return {ms:e.milliseconds, gap, els:(e.elements||[]).flat(), pitches, startChars:e.startCharArray||[e.startChar]};
   });
+  applyPart(events);
   // meta
   const title=(v.metaText&&v.metaText.title)||'Untitled';
   const comp=(v.metaText&&v.metaText.composer)||'';
@@ -646,7 +938,7 @@ function onKeyPlayed(m){
 }
 
 /* ---------- lesson ---------- */
-function nextIdx(i,dir){ let j=i+dir; while(j>=0&&j<events.length&&!events[j].pitches.length&&events[j].els.length===0) j+=dir; return Math.max(0,Math.min(events.length-1,j)); }
+function nextIdx(i,dir){ let j=i+dir; while(j>=0&&j<events.length&&!events[j].pitches.length&&(events[j].els.length===0||events[j].backingOnly)) j+=dir; return Math.max(0,Math.min(events.length-1,j)); }
 
 let litEls=[];
 function highlight(ev){
@@ -677,6 +969,7 @@ function lessonSoon(ev){
   else lessonTimer=setTimeout(()=>{ lessonAt=performance.now(); renderLesson(events[cur]); },200-(now-lessonAt));
 }
 function renderLesson(ev){
+  if(INST.view!=='piano') return renderInstLesson(ev);
   const total=events.length;
   $('#counter').textContent=`Step ${cur+1} of ${total}`;
   const steps=[];
@@ -793,13 +1086,15 @@ function startDemo(from=firstNoteIndex()){
   const win=pedalMode==='bar'?msPerMeasure:pedalMode==='half'?msPerMeasure/2:0, list=[];
   for(let i=from;i<events.length;i++){
     const ev=events[i];
-    ev.pitches.forEach(p=>{
+    const add=(p,tb,mul)=>{
       let endMs=ev.ms+Math.max(100,p.ms-20);
-      if(win>0){ const change=(Math.floor((ev.ms+1)/win)+1)*win-30; endMs=Math.max(endMs,change); }
-      list.push({midi:p.midi,start:ev.ms,end:endMs,vel:.35+.4*(p.vol/127)});
-    });
+      if(win>0&&tb==='piano'){ const change=(Math.floor((ev.ms+1)/win)+1)*win-30; endMs=Math.max(endMs,change); }
+      list.push({midi:p.midi,start:ev.ms,end:endMs,vel:(.35+.4*(p.vol/127))*mul,tb});
+    };
+    ev.pitches.forEach(p=>add(p,INST.sound,1));
+    (ev.accomp||[]).forEach(p=>add(p,'piano',.45));
   }
-  if(win>0){ const last={}; list.slice().sort((a,b)=>a.start-b.start).forEach(n=>{ const prev=last[n.midi]; if(prev&&prev.end>n.start) prev.end=Math.max(prev.start+60,n.start-10); last[n.midi]=n; }); }
+  if(win>0){ const last={}; list.filter(n=>n.tb==='piano').sort((a,b)=>a.start-b.start).forEach(n=>{ const prev=last[n.midi]; if(prev&&prev.end>n.start) prev.end=Math.max(prev.start+60,n.start-10); last[n.midi]=n; }); }
   if(win>0&&pedalIn) bus.connect(pedalIn); // the demo's notes share the pedal resonance (and stop with the demo)
   // notes are handed to the audio engine a few seconds ahead as the song plays, not all at once:
   // a long piece would otherwise create thousands of sound objects up front, which makes phones and
@@ -874,7 +1169,7 @@ function scheduleAhead(){
   while(p.next<p.list.length){
     const n=p.list[p.next], at=p.t0+(n.start-p.base)/1000/p.sp;
     if(at>until) break;
-    if(at>=ctx.currentTime-0.05) tone(n.midi,at,Math.max(.1,(n.end-n.start)/1000/p.sp),p.bus,n.vel,p.pedal);
+    if(at>=ctx.currentTime-0.05) tone(n.midi,at,Math.max(.1,(n.end-n.start)/1000/p.sp),p.bus,n.vel,p.pedal&&n.tb==='piano',n.tb);
     p.next++;
   }
   metroDemo(p,until);
@@ -1145,7 +1440,8 @@ let pianoOpen=true;
 function setPiano(open){
   pianoOpen=open;
   $('.dock').classList.toggle('collapsed',!open);
-  $('#pianoBtn').textContent=open?'Hide piano ▾':'Show piano ▴';
+  const what=INST.view==='piano'?'piano':'guide';
+  $('#pianoBtn').textContent=open?'Hide '+what+' ▾':'Show '+what+' ▴';
   $('#pianoBtn').setAttribute('aria-expanded',String(open));
   $('#rollBtn').hidden=!open;
   $('#dockLabel').hidden=!open;
@@ -2149,3 +2445,6 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
     if(!imgLimits) $('#intakeHint').textContent='Reading photos is unavailable here. Open ABC notation or MusicXML, or pick a song.';
   }catch(e){ sampleFn=null; }
 })();
+
+// your instrument: build the picker and set up the page for it
+buildInstPicker(); applyInstUI();

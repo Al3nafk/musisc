@@ -57,6 +57,21 @@ header{padding-block:18px 10px;display:flex;flex-wrap:wrap;gap:12px 24px;align-i
 .watermark span{position:absolute;right:16px;bottom:10px;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.06em;white-space:nowrap;color:var(--muted);background:color-mix(in srgb,var(--panel) 70%,transparent);border:1px solid var(--line);opacity:.8}
 @media print{.watermark span{position:fixed}}
 
+/* Your instrument */
+.inst{margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--panel);display:grid;gap:8px}
+.inst-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
+.inst-list{display:flex;flex-wrap:wrap;gap:8px 16px}
+.inst-group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.inst-g{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-right:2px}
+:root{--board:#E9DCC8;--fret:#B9A27E;--string:#8A8F9C;--inlay:#C9B796}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){--board:#3A3226;--fret:#6E6046;--string:#A7ADBA;--inlay:#5B4E3A} }
+:root[data-theme="dark"]{--board:#3A3226;--fret:#6E6046;--string:#A7ADBA;--inlay:#5B4E3A}
+.inst-view{padding:6px 2px 2px;display:grid;gap:6px;justify-items:center}
+.inst-view .iv-svg{width:100%;max-width:720px;height:auto;display:block}
+.inst-view .iv-svg.small{max-width:240px}
+.inst-view .iv-text{font-size:.9rem;text-align:center;color:var(--ink)}
+.inst-view .iv-warn{color:var(--bad);font-weight:500}
+.dock.collapsed .inst-view{display:none}
 .intake{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;border:1.5px dashed var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
 .find{margin-top:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px;background:var(--panel)}
 .find form{display:flex;gap:8px;flex-wrap:wrap}
@@ -219,6 +234,11 @@ select.btn{padding-right:10px}
   .intake .hint{flex-basis:100%;padding:2px 4px}
   .find input,.bpm input,.pedal select,.mic-top select,#abcText,input[type=text],input[type=search],input[type=number],select{font-size:16px}
   .find .grid{grid-template-columns:minmax(0,1fr)}
+  .inst{padding:8px}
+  .inst-list{flex-wrap:nowrap;overflow-x:auto;gap:12px;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .inst-group{flex-wrap:nowrap;flex:none}
+  .inst-list .btn.mini{padding:7px 11px}
+  .inst-view .iv-text{font-size:.82rem}
   .find .foot{display:block;line-height:1.55;font-size:.82rem}
   .find form .btn{min-height:44px}
   .hit{padding:10px 12px}
@@ -275,6 +295,10 @@ select.btn{padding-right:10px}
     </div>
   </header>
 
+  <section class="inst" id="instSec" aria-label="Your instrument">
+    <div class="inst-head"><b>Your instrument</b><span class="small" id="instNote"></span></div>
+    <div class="inst-list" id="instList"></div>
+  </section>
   <section class="intake" id="intake" aria-label="Add sheet music">
     <label class="btn primary" for="fileIn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
@@ -398,6 +422,7 @@ select.btn{padding-right:10px}
       <span class="dock-r"><span id="dockNow"></span><button class="btn mini" id="rollBtn" type="button" aria-pressed="true">Hide <span class="opt">falling </span>notes</button><button class="btn mini primary" id="pianoBtn" type="button" aria-expanded="true" aria-controls="kbScroll">Hide piano ▾</button></span>
     </div>
     <div class="kb-scroll" id="kbScroll"><div class="kb-inner" id="kbInner"><canvas id="roll" class="roll" aria-label="Falling notes"></canvas><div class="kb" id="kb"></div></div></div>
+    <div class="inst-view" id="instView" hidden aria-live="polite"></div>
   </div>
 </div>
 <div class="drop-overlay" id="dropOv" hidden><div>Drop your sheet music</div></div>
