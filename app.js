@@ -54,6 +54,150 @@ d2 G A B c | d2 G2 G2 | e2 c d e f | g2 G2 G2 |
 c2 d c B A | B2 c B A G | A2 B A G F | G6 |]`
 };
 
+/* One sample piece per instrument, written at concert pitch (Musisc shows them at each instrument's
+   written pitch). Traditional and public-domain tunes, plus two short exercises written for Musisc.
+   Most carry chord symbols, so they also work as lead sheets. */
+Object.assign(SAMPLES,{
+canon:`X:1
+T:Canon in D (theme)
+C:after Johann Pachelbel
+M:4/4
+L:1/4
+Q:1/4=72
+K:D
+"D"f2 "A"e2 | "Bm"d2 "F#m"c2 | "G"B2 "D"A2 | "G"B2 "A"c2 |
+"D"d A "A"c e | "Bm"d F "F#m"A c | "G"B G "D"F A | "G"G B "A"A c |
+"D"f2 "A"e2 | "Bm"d2 "F#m"c2 | "G"B2 "D"A2 | "G"B2 "A"c2 | "D"d4 |]`,
+greensleeves:`X:1
+T:Greensleeves
+C:Traditional (English)
+M:6/8
+L:1/8
+Q:3/8=60
+K:Am
+A, | "Am"C2 D "C"E>FE | "G"D2 B, "Em"G,>A,B, | "Am"C2 A, "F"A,>^G,A, | "E"B,2 ^G, E,2 A, |
+"Am"C2 D "C"E>FE | "G"D2 B, "Em"G,>A,B, | "Am"C>B,A, "E"^G,>^F,G, | "Am"A,3 A,2 |]`,
+mountainking:`X:1
+T:In the Hall of the Mountain King (riff)
+C:after Edvard Grieg
+M:4/4
+L:1/8
+Q:1/4=110
+K:Em
+"Em"E, F, G, A, B, G, B,2 | "B7"^A, F, ^A,2 "Am"=A, F, A,2 | "Em"E, F, G, A, B, G, B, E | "B7"D B, G, B, "Em"D4 |
+"Em"E, F, G, A, B, G, B,2 | "B7"^A, F, ^A,2 "Am"=A, F, A,2 | "Em"E, F, G, A, B, G, B, E | "B7"D B, G, B, "Em"E4 |]`,
+bluesbass:`X:1
+T:Walking Blues in A (bass line)
+C:Exercise written for Musisc
+M:4/4
+L:1/4
+Q:1/4=100
+K:A clef=bass
+"A7"A,,, C,, E,, F,, | A,,, C,, E,, F,, | A,,, C,, E,, F,, | A,,, C,, E,, F,, |
+"D7"D,, F,, A,, B,, | D,, F,, A,, B,, | "A7"A,,, C,, E,, F,, | A,,, C,, E,, F,, |
+"E7"E,, G,, B,, C, | "D7"D,, F,, A,, B,, | "A7"A,,, C,, E,, F,, | "E7"E,, G,, B,, E,, |]`,
+jingle:`X:1
+T:Jingle Bells (chorus)
+C:James Lord Pierpont
+M:4/4
+L:1/4
+Q:1/4=120
+K:C
+"C"E E E2 | E E E2 | E G C3/2 D/ | E4 |
+"F"F F F3/2 F/ | "C"F E E E/E/ | "G7"E D D E | D2 G2 |
+"C"E E E2 | E E E2 | E G C3/2 D/ | E4 |
+"F"F F F3/2 F/ | "C"F E E E/E/ | "G7"G G F D | "C"C4 |]`,
+lightlyrow:`X:1
+T:Lightly Row
+C:Traditional (German)
+M:4/4
+L:1/4
+Q:1/4=104
+K:D
+"D"A F F2 | "A7"G E E2 | "D"D E F G | A A A2 |
+A F F F | "A7"G E E E | "D"D F A A | D4 |
+"A7"E E E E | E F G2 | "D"F F F F | F G A2 |
+A F F2 | "A7"G E E2 | "D"D F A A | D4 |]`,
+canonbass:`X:1
+T:Canon in D (cello part)
+C:Johann Pachelbel
+M:4/4
+L:1/4
+Q:1/4=66
+K:D clef=bass
+"D"D,2 "A"A,,2 | "Bm"B,,2 "F#m"F,,2 | "G"G,,2 "D"D,,2 | "G"G,,2 "A"A,,2 |
+"D"D,2 "A"A,,2 | "Bm"B,,2 "F#m"F,,2 | "G"G,,2 "D"D,,2 | "G"G,,2 "A"A,,2 |
+"D"D,2 "A"A,,2 | "Bm"B,,2 "F#m"F,,2 | "G"G,,2 "D"D,,2 | "G"G,,2 "A"A,,2 | "D"D,4 |]`,
+morningmood:`X:1
+T:Morning Mood (theme)
+C:after Edvard Grieg
+M:6/8
+L:1/8
+Q:3/8=56
+K:C
+"C"g e d c d e | g e d c d e | "Am"d e g e g a | "F"e a g e d c |
+"C"g e d c d e | g e d c d e | "G"d e g e g a | "C"c'6 |]`,
+frere:`X:1
+T:Frère Jacques
+C:Traditional (French)
+M:4/4
+L:1/4
+Q:1/4=100
+K:C
+"C"C D E C | C D E C | E F G2 | E F G2 |
+G/A/G/F/ E C | G/A/G/F/ E C | C "G"G, "C"C2 | C "G"G, "C"C2 |]`,
+amazing:`X:1
+T:Amazing Grace
+C:Traditional (John Newton, words)
+M:3/4
+L:1/4
+Q:1/4=80
+K:Eb
+B, | "Eb"E2 G/E/ | G2 F | "Ab"E2 C | "Eb"B,2 B, | E2 G/E/ | G2 F/G/ | "Bb"B3- | B2 G |
+"Eb"B2 G/E/ | G2 F | "Ab"E2 C | "Eb"B,2 B, | E2 G/E/ | "Bb"G2 F | "Eb"E3- | E2 |]`,
+auldlang:`X:1
+T:Auld Lang Syne
+C:Traditional (Scottish)
+M:4/4
+L:1/4
+Q:1/4=84
+K:Bb
+F | "Bb"B3/2 B/ B d | "F7"c3/2 B/ c d | "Bb"B3/2 B/ d f | "Eb"g3 g |
+"Bb"f3/2 d/ d B | "F7"c3/2 B/ c d | "Gm"B3/2 G/ "Eb"G F | "Bb"B3 |]`,
+saints:`X:1
+T:When the Saints Go Marching In
+C:Traditional (spiritual)
+M:4/4
+L:1/4
+Q:1/4=112
+K:Bb
+z B, D E | "Bb"F4 | z B, D E | F4 | z B, D E | F2 D2 | B,2 D2 | "F7"C4 |
+z D D C | "Bb"B,3 B, | "Bb7"D2 F2 | "Eb"F E3 | z D E F | "Bb"D2 B,2 | "F7"C2 C2 | "Bb"B,4 |]`,
+goinghome:`X:1
+T:Goin' Home (Largo theme)
+C:after Antonín Dvořák
+M:4/4
+L:1/4
+Q:1/4=60
+K:C clef=bass
+"C"E, G, G,2 | E, D, C,2 | "G"D, E, G, E, | D,4 |
+"C"E, G, G,2 | E, D, C,2 | "G"D, E, D, C, | "C"C,4 |]`,
+birthday:`X:1
+T:Happy Birthday
+C:Mildred and Patty Hill
+M:3/4
+L:1/8
+Q:1/4=100
+K:C
+G>G | "C"A2 G2 c2 | "G"B4 G>G | A2 G2 d2 | "C"c4 G>G |
+w:Hap-py birth-day to you, Hap-py birth-day to you, Hap-py
+"F"g2 e2 c2 | B2 A2 f>f | "C"e2 c2 "G"d2 | "C"c4 |]
+w:birth-day dear Mu-sisc, Hap-py birth-day to you!`
+});
+// which instrument each sample is for (the piano ones are listed under Piano)
+const SAMPLE_FOR={ode:'piano',ode2:'piano',twinkle:'piano',minuet:'piano',canon:'keys',greensleeves:'guitar',mountainking:'eguitar',bluesbass:'bass',
+  jingle:'uke',lightlyrow:'violin',canonbass:'cello',morningmood:'flute',frere:'clarinet',amazing:'asax',auldlang:'tsax',saints:'trumpet',goinghome:'trombone',birthday:'voice'};
+
 const SH=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 const FL=['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
 const SOLF={C:'Do',D:'Re',E:'Mi',F:'Fa',G:'Sol',A:'La',B:'Ti'};
@@ -309,8 +453,9 @@ function fitOctave(midis){
   // most notes inside the range first; among nearly-as-good octaves, the one nearest the middle of the range
   const [lo,hi]=INST.range, mid=(lo+hi)/2, sorted=midis.slice().sort((a,b)=>a-b), med=sorted[Math.floor(sorted.length/2)];
   const opts=[-3,-2,-1,0,1,2,3].map(k=>({k, n:midis.filter(m=>m+12*k>=lo&&m+12*k<=hi).length/midis.length, d:Math.abs(med+12*k-mid)}));
-  const top=Math.max(...opts.map(o=>o.n));
-  return opts.filter(o=>o.n>=top-.03).sort((a,b)=>a.d-b.d)[0].k*12;
+  const top=Math.max(...opts.map(o=>o.n)), good=opts.filter(o=>o.n>=top-.03);
+  if(good.some(o=>o.k===0)) return 0;
+  return good.sort((a,b)=>a.d-b.d)[0].k*12;
 }
 // quick look at the rendered score to choose the octave before drawing it at written pitch
 function partShiftFor(v,opts){
@@ -345,19 +490,22 @@ function buildInstPicker(){
   box.innerHTML=groups.map(g=>`<div class="inst-group"><span class="inst-g">${g}</span>${INSTRUMENTS.filter(i=>i.group===g).map(i=>`<button type="button" class="btn mini toggle" data-inst="${i.id}" aria-pressed="${i===INST}">${esc(i.name)}</button>`).join('')}</div>`).join('');
   box.onclick=e=>{ const b=e.target.closest('[data-inst]'); if(b) setInstrument(b.dataset.inst); };
 }
-function setInstrument(id){
+function setInstrument(id,noReload){
   const next=INSTRUMENTS.find(i=>i.id===id)||INSTRUMENTS[0];
   if(next===INST&&$('#instList [aria-pressed="true"]')) return;
   INST=next; try{ localStorage.setItem('smc.instrument',INST.id); }catch(e){}
   document.querySelectorAll('#instList [data-inst]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.inst===INST.id)));
   applyInstUI();
-  if(vis){ if(play) stopDemo(); if(MIC.on) micStop(); reloadKeep(); }
+  if(play) stopDemo(); if(MIC.on) micStop();
+  if(vis&&!noReload) reloadKeep();
 }
 function instNoun(){ return INST.id==='voice'?'voice':INST.name.replace(/ \(.*\)$/,'').replace(/^Acoustic |^Electric /,'').toLowerCase(); }
 function applyInstUI(){
   const piano=INST.view==='piano';
   const part=INST.part==='both'?'You play every note of the score.':INST.part==='bass'?'You play the bass line; the rest plays softly as backing.':'You play the melody (the top line); the rest plays softly as backing.';
   $('#instNote').textContent=part+(INST.note?' '+INST.note:'');
+  const sk=Object.keys(SAMPLE_FOR).filter(k=>SAMPLE_FOR[k]===INST.id), sb=$('#instSample');
+  if(sb){ const k=INST.id==='piano'?'ode2':sk[0]; sb.hidden=!k; if(k){ sb.dataset.k=k; sb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M7 4v16l13-8z"/></svg> Try a sample: '+esc(SAMPLE_NAMES[k]); } }
   $('#kbScroll').hidden=!piano;
   $('#instView').hidden=piano;
   $('#rollBtn').style.display=piano?'':'none';
@@ -1995,6 +2143,7 @@ $('#micDev').onchange=e=>{ setMicPref(e.target.value); if(MIC.on){ const from=MI
 
 /* ---------- song library ---------- */
 const SAMPLE_NAMES={ode:'Ode to Joy (melody)',ode2:'Ode to Joy (both hands)',twinkle:'Twinkle, Twinkle, Little Star',minuet:'Minuet in G'};
+Object.keys(SAMPLES).forEach(k=>{ if(!SAMPLE_NAMES[k]) SAMPLE_NAMES[k]=(SAMPLES[k].match(/^T:(.*)$/m)||[0,k])[1].trim(); });
 let memSongs=null; // fallback when browser storage is unavailable
 function getSongs(){ try{ return JSON.parse(localStorage.getItem('smc.songs')||'[]'); }catch(e){ return memSongs||[]; } }
 function putSongs(list){ memSongs=list; try{ localStorage.setItem('smc.songs',JSON.stringify(list)); }catch(e){} }
@@ -2011,7 +2160,10 @@ function fillSongs(){
   const list=songs();
   let h='<option value="">Open a song…</option>';
   if(list.length) h+='<optgroup label="My songs">'+list.map(s=>`<option value="m:${s.id}">${esc(s.title)}</option>`).join('')+'</optgroup>';
-  h+='<optgroup label="Samples">'+Object.keys(SAMPLES).map(k=>`<option value="s:${k}">${esc(SAMPLE_NAMES[k])}</option>`).join('')+'</optgroup>';
+  INSTRUMENTS.forEach(ins=>{
+    const ks=Object.keys(SAMPLES).filter(k=>(SAMPLE_FOR[k]||'piano')===ins.id); if(!ks.length) return;
+    h+=`<optgroup label="Samples for ${esc(ins.name)}">`+ks.map(k=>`<option value="s:${k}">${esc(SAMPLE_NAMES[k])}</option>`).join('')+'</optgroup>';
+  });
   if((currentSong||'').startsWith('m:')) h+='<optgroup label="This song"><option value="del">Remove from My songs</option></optgroup>';
   $('#songSel').innerHTML=h;
 }
@@ -2025,7 +2177,7 @@ $('#songSel').onchange=e=>{
     return;
   }
   try{
-    if(v.startsWith('s:')) loadAbc(SAMPLES[v.slice(2)]);
+    if(v.startsWith('s:')){ const k=v.slice(2), want=SAMPLE_FOR[k]; if(want&&want!==INST.id&&want!=='piano') setInstrument(want,true); loadAbc(SAMPLES[k]); }
     else { const s=songs().find(x=>'m:'+x.id===v); if(!s) return; loadAbc(s.abc); }
     currentSong=v; fillSongs(); showView('score'); setStatus('');
   }catch(err){ setStatus(esc(err.message),'err'); }
@@ -2621,3 +2773,4 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 
 // your instrument: build the picker and set up the page for it
 buildInstPicker(); applyInstUI();
+$('#instSample').onclick=e=>{ const k=e.currentTarget.dataset.k; if(!k) return; try{ loadAbc(SAMPLES[k]); currentSong='s:'+k; fillSongs(); showView('score'); setStatus(''); }catch(err){ setStatus(esc(err.message),'err'); } };
