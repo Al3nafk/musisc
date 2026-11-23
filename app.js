@@ -270,54 +270,49 @@ function renderScore(src,L){
   return v;
 }
 
-/* ---------- chord names ----------
-   Works out a chord for each bar (each half bar in 4/4, 6/8 and 12/8) from every note sounding in it,
-   weighted by how long it sounds, and writes it into the notation as a chord symbol so abcjs lays it
-   out above the staff. Only names a chord when the notes clearly fit one; scores that already have
-   chord symbols keep their own. */
 let chordsOn=(()=>{ try{ return localStorage.getItem('smc.chords')!=='off'; }catch(e){ return true; } })();
-const CHORD_Q=[['',[0,4,7],0],['m',[0,3,7],0],['7',[0,4,7,10],.06],['m7',[0,3,7,10],.09],
-  ['dim',[0,3,6],.05],['aug',[0,4,8],.08],['sus4',[0,5,7],.07]];
-const PC_SHARP=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'], PC_FLAT=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const CHORD_KIND={'':[0,4,7], m:[0,3,7], '7':[0,4,7,10]};
+// chords that belong to the key (step above the key note, kind, how readily a song uses it)
+const KEY_CHORDS={
+  major:[[0,'',.15],[7,'',.10],[5,'',.09],[7,'7',.03],[9,'m',0],[2,'m',-.04],[4,'m',-.14],
+         [2,'',-.2],[2,'7',-.2],[4,'',-.22],[4,'7',-.22],[0,'7',-.22],[10,'',-.22],[5,'m',-.24]],
+  minor:[[0,'m',.15],[7,'',.10],[7,'7',.04],[5,'m',.09],[8,'',0],[3,'',-.03],[10,'',-.06],[7,'m',-.08],
+         [5,'',-.2],[0,'',-.22],[0,'7',-.22],[2,'7',-.22]]
+};
 function hasChordSymbols(v){
   return v.lines.some(l=>l.staff&&l.staff.some(s=>(s.voices||[]).some(vo=>vo.some(e=>e.chord&&e.chord.some(c=>!c.position||c.position==='default')))));
-}
-function guessChord(w,bass,names,slash,mono){
-  const total=w.reduce((a,b)=>a+b,0); if(total<=0) return null;
-  const has=pc=>w[pc]>total*.08;
-  if(w.filter((x,i)=>has(i)).length<2) return null;
-  let best=null;
-  for(let r=0;r<12;r++){
-    if(!has(r)) continue;
-    for(const [suf,iv,cx] of CHORD_Q){
-      if(mono&&iv.length>3) continue;                                     // a single melody line: triads only
-      const tones=iv.map(i=>(r+i)%12), got=tones.filter(has).length;
-      if(w[tones[1]]<total*(suf==="sus4"?.08:.03)) continue;               // needs its 3rd (or the 4th for sus4)
-      if(iv.length>3&&(w[tones[3]]<total*(suf==='7'?.12:.18)||got<3)) continue; // a 7th chord needs a clear 7th
-      if((suf==='dim'||suf==='aug'||suf==='sus4')&&got<3) continue;
-      const inn=tones.reduce((a,t)=>a+w[t],0);
-      if(inn/total<(mono?.85:.72)) continue;
-      const score=inn-(total-inn)-(iv.length-got)*.15*total-cx*total+(bass===r?.12*total:0);
-      if(!best||score>best.score) best={score,r,suf,tones};
-    }
-  }
-  if(!best) return null;
-  let name=names[best.r]+best.suf;
-  if(slash&&bass!=null&&bass!==best.r&&best.tones.includes(bass)) name+='/'+names[bass];
-  return {name,tones:best.tones};
 }
 // abcjs reports a 4-beat bar length even in 3/4, so work it out: ms per beat x bar length / beat length
 function barMsOf(v,t){
   const mpb=t.millisecondsPerBeat, bl=v.getBeatLength&&v.getBeatLength(), bar=v.getBarLength&&v.getBarLength();
   return mpb&&bl&&bar?mpb*bar/bl:(t.millisecondsPerMeasure||2400);
 }
+/* ---------- chord names ----------
+   Gives every bar (every half bar in 4/4, 6/8 and 12/8) the chord that best fits the notes sounding
+   in it, the way a lead sheet harmonises a tune: chords of the piece's key are preferred (I, IV, V, V7,
+   vi ...), notes on the beat count most, a note held in the bass counts extra, and a whole-song pass
+   (Viterbi) favours natural progressions (V to I, IV to V, keeping a chord) and ending on the home
+   chord. Other chords are allowed but must fit clearly, so music that changes key still gets named.
+   Written into the rendered copy as ABC chord symbols; scores that have their own keep them. */
 function addChords(v,src,opts){
   try{ v.setUpAudio(opts); }catch(e){}
   const timer=new ABCJS.TimingCallbacks(v,opts);
   const nt=(timer.noteTimings||[]).filter(e=>e.type==='event'); if(!nt.length) return null;
   const mpm=barMsOf(v,timer), mf=(v.getMeterFraction&&v.getMeterFraction())||{num:4,den:4};
   const measureWhole=mf.num/mf.den, halves=[4,6,12].includes(mf.num);
-  const names=(((v.lines.find(l=>l.staff).staff[0].key||{}).accidentals||[]).some(a=>a.acc==='flat'))?PC_FLAT:PC_SHARP;
+  const key=v.lines.find(l=>l.staff).staff[0].key||{};
+  const LET={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+  const tonic=((LET[(key.root||'C')[0]]??0)+(key.acc==='#'?1:key.acc==='b'?-1:0)+12)%12;
+  const minor=/^m/i.test(key.mode||'')&&!/^maj/i.test(key.mode||'');
+  // chord spelling the way lead sheets write it (Bb, Eb, F#); sharp keys use C#, G#, D#, flat keys Db, Gb
+  const acc=key.accidentals||[], nSharp=acc.filter(a=>a.acc==='sharp').length, nFlat=acc.filter(a=>a.acc==='flat').length;
+  const names=['C',nFlat>=4?'Db':'C#','D',nSharp>=4?'D#':'Eb','E','F',nFlat>=5?'Gb':'F#','G',nSharp>=2?'G#':'Ab','A','Bb','B'];
+  // candidate chords: the key's own (with their bonus), then every other major, minor and 7th chord (with a cost)
+  const cands=[], seen=new Set(), poly=nt.some(e=>(e.midiPitches||[]).filter(p=>p.cmd!=='rest').length>1);
+  KEY_CHORDS[minor?'minor':'major'].forEach(([st,kind,bonus])=>{ const r=(tonic+st)%12; seen.add(r+kind); cands.push({r,kind,bonus,tones:CHORD_KIND[kind].map(i=>(r+i)%12)}); });
+  for(let r=0;r<12;r++) for(const kind of ['','m','7']) if(!seen.has(r+kind)) cands.push({r,kind,bonus:poly?-.4:-.45,tones:CHORD_KIND[kind].map(i=>(r+i)%12)});
+  cands.forEach(c=>{ c.name=names[c.r]+c.kind; c.home=c.r===tonic&&c.kind===(minor?'m':''); c.dom=c.r===(tonic+7)%12&&(c.kind===''||c.kind==='7'); });
+
   const mstart={};
   const evs=nt.map(e=>{
     const parts=(e.startCharArray||[e.startChar]).map((sc,i)=>{
@@ -330,65 +325,191 @@ function addChords(v,src,opts){
       .map(p=>({midi:p.pitch, dur:(typeof p.duration==='number'?p.duration:.25)/measureWhole*mpm}));
     return {ms:e.milliseconds, parts, pitches};
   });
-  const mms=Object.keys(mstart).map(Number).sort((a,b)=>a-b), bars=[];
-  const seg=(s,e)=>({s,e,w:new Array(12).fill(0),bass:null,bassOv:0});
   const beat=mpm/((mf.den===8&&mf.num%3===0&&mf.num>3)?mf.num/3:mf.num);
+  const mms=Object.keys(mstart).map(Number).sort((a,b)=>a-b), segs=[];
+  const seg=(s,e)=>({s,e,on:new Array(12).fill(0),off:new Array(12).fill(0),bass:null,bassOv:0,total:0});
   mms.forEach((m,i)=>{
-    const s=mstart[m], end=i+1<mms.length?mstart[mms[i+1]]:s+mpm, mid=s+(end-s)/2;
-    bars.push({whole:seg(s,end), halves:halves&&end-s>mpm*.75?[seg(s,mid),seg(mid,end)]:null});
+    const s=mstart[m], end=i+1<mms.length?mstart[mms[i+1]]:s+mpm;
+    if(halves&&end-s>mpm*.75){ const mid=s+(end-s)/2; segs.push(seg(s,mid),seg(mid,end)); } else segs.push(seg(s,end));
   });
-  const fill=list=>{
-    let first=0;
-    evs.forEach(ev=>{
-      while(first<list.length-1&&list[first].e<=ev.ms) first++;
-      ev.pitches.forEach(p=>{
-        const en=ev.ms+p.dur;
-        for(let k=first;k<list.length&&list[k].s<en;k++){
-          const g=list[k], ov=Math.min(en,g.e)-Math.max(ev.ms,g.s); if(ov<=0) continue;
-          // notes on the beat shape the harmony; quick notes between beats are often just passing
-          const off=(ev.ms-g.s)%beat, onBeat=ev.ms>=g.s-1&&(off<25||off>beat-25);
-          g.w[p.midi%12]+=ov*(Math.abs(ev.ms-g.s)<25?1.4:onBeat?1.15:p.dur<beat*.6?.65:.85);
-          if(ov>=(g.e-g.s)*.2&&(g.bass==null||p.midi<g.bass)){ g.bass=p.midi; g.bassOv=ov; }
-        }
-      });
+  let first=0;
+  evs.forEach(ev=>{
+    while(first<segs.length-1&&segs[first].e<=ev.ms) first++;
+    ev.pitches.forEach(p=>{
+      const en=ev.ms+p.dur;
+      for(let k=first;k<segs.length&&segs[k].s<en;k++){
+        const g=segs[k], ov=Math.min(en,g.e)-Math.max(ev.ms,g.s); if(ov<=0) continue;
+        const startsHere=ev.ms>=g.s-1, off=(ev.ms-g.s)%beat, onBeat=!startsHere||off<25||off>beat-25;
+        const wgt=ov*(startsHere&&Math.abs(ev.ms-g.s)<25?2:1);   // the note that starts the bar or half bar matters most
+        (onBeat?g.on:g.off)[p.midi%12]+=wgt; g.total+=wgt;
+        if(poly&&ov>=(g.e-g.s)*.2&&(g.bass==null||p.midi<g.bass)){ g.bass=p.midi; g.bassOv=ov; }
+      }
     });
-  };
-  fill(bars.map(b=>b.whole)); fill(bars.flatMap(b=>b.halves||[]));
-  // one line of melody only (no two notes at once): name a chord only when the notes spell it out
-  const mono=evs.every(ev=>ev.pitches.length<=1);
-  const guess=g=>guessChord(g.w,g.bass==null?null:g.bass%12,names,!mono&&g.bassOv>=(g.e-g.s)*.45,mono);
-  // a half bar only gets its own chord when the two halves really differ and the whole-bar chord can't cover both
-  const fits=(g,c)=>{ const t=g.w.reduce((a,b)=>a+b,0); return !!c&&g.w.every((x,pc)=>x<=t*.15||c.tones.includes(pc)); };
-  const labels=[];
-  bars.forEach(b=>{
-    const W=guess(b.whole);
-    if(b.halves){
-      const H=b.halves.map(guess);
-      if(H[0]&&H[1]&&H[0].name!==H[1].name&&!(fits(b.halves[0],W)&&fits(b.halves[1],W))){ labels.push([b.halves[0],H[0]],[b.halves[1],H[1]]); return; }
-      if(!W){ b.halves.forEach((g,i)=>{ if(H[i]) labels.push([g,H[i]]); }); return; }
-    }
-    if(W) labels.push([b.whole,W]);
   });
-  const ins=[]; let prev='', prevLine=-1, j=0;
-  labels.forEach(([g,c])=>{
-    while(j<evs.length&&evs[j].ms<g.s-1) j++;
+  // how well chord c fits segment g: chord tones count for it, other notes against it
+  // (much more when they fall on the beat than when they pass between beats)
+  const fit=(g,c)=>{
+    if(g.total<=0) return 0;
+    let f=0;
+    for(let pc=0;pc<12;pc++){
+      const at=c.tones.indexOf(pc), w=g.on[pc]+g.off[pc];
+      f+=at<0?-(g.on[pc]*.55+g.off[pc]*.2):at===3?w*.5:w;                // a 7th counts only half as a chord note
+    }
+    f/=g.total;
+    if(c.kind==='7'&&!(g.on[c.tones[3]]+g.off[c.tones[3]]>g.total*.12)) f-=.1;    // a 7th chord only when its 7th is heard
+    if(g.bass!=null){ const b=g.bass%12; f+=b===c.r?.45:c.tones.includes(b)?-.1:-.45; }
+    return f;
+  };
+  const trans=(a,b)=>{
+    if(a===b) return .1;
+    let t=0;
+    if(a.dom&&b.home) t+=.1;
+    if(b.dom&&(a.r===(tonic+5)%12||a.r===(tonic+2)%12)) t+=.07;          // IV or ii going to V
+    if(a.r===b.r) t-=.04;                                                 // C to C7, G to Gm: only if the notes say so
+    return t;
+  };
+  // Viterbi through the song
+  const N=segs.length, C=cands.length; if(!N) return null;
+  const lastNote=(()=>{ for(let i=N-1;i>=0;i--) if(segs[i].total>0) return i; return N-1; })();
+  let score=cands.map(c=>fit(segs[0],c)+c.bonus+(c.home?.12:0)), back=[];
+  for(let i=1;i<N;i++){
+    const ns=new Array(C), bk=new Array(C);
+    for(let j=0;j<C;j++){
+      let best=-1e9, arg=0;
+      for(let k=0;k<C;k++){ const s=score[k]+trans(cands[k],cands[j]); if(s>best){ best=s; arg=k; } }
+      ns[j]=best+fit(segs[i],cands[j])+cands[j].bonus*(segs[i].total>0?1:0)+(i===lastNote&&cands[j].home?.3:0);
+      bk[j]=arg;
+    }
+    score=ns; back.push(bk);
+  }
+  let j=score.indexOf(Math.max(...score)); const path=new Array(N); path[N-1]=j;
+  for(let i=N-2;i>=0;i--){ j=back[i][j]; path[i]=j; }
+  // label each change (and the first chord on every row), at the first note in that bar or half bar
+  const ins=[]; let prev=null, prevLine=-1, e=0;
+  segs.forEach((g,i)=>{
+    const c=cands[path[i]];
+    if(g.total<=0) return;
+    while(e<evs.length&&evs[e].ms<g.s-1) e++;
     let ev=null;
-    for(let k=j;k<evs.length&&evs[k].ms<g.s+(g.e-g.s)*.5;k++) if(evs[k].parts.length){ ev=evs[k]; break; }
+    for(let k=e;k<evs.length&&evs[k].ms<g.e-1;k++) if(evs[k].parts.length){ ev=evs[k]; break; }
     if(!ev) return;
     const part=ev.parts[0];
-    if(c.name===prev&&part.line===prevLine) return;
-    prev=c.name; prevLine=part.line;
-    ins.push({sc:part.sc, text:'"'+c.name+'"'});
+    let name=c.name;
+    if(g.bass!=null&&g.bassOv>=(g.e-g.s)*.45){ const b=g.bass%12; if(b!==c.r&&c.tones.includes(b)) name+='/'+names[b]; }
+    if(name===prev&&part.line===prevLine) return;
+    prev=name; prevLine=part.line;
+    ins.push({sc:part.sc, text:'"'+name+'"'});
   });
   if(!ins.length) return null;
-  let out=src; const seen=new Set();
-  ins.sort((a,b)=>b.sc-a.sc).forEach(x=>{ if(seen.has(x.sc)) return; seen.add(x.sc); out=out.slice(0,x.sc)+x.text+out.slice(x.sc); });
+  let out=src; const used=new Set();
+  ins.sort((a,b)=>b.sc-a.sc).forEach(x=>{ if(used.has(x.sc)) return; used.add(x.sc); out=out.slice(0,x.sc)+x.text+out.slice(x.sc); });
   return out;
 }
+/* Lead sheets (scores that come with chord symbols written in) show their own chords, and the button
+   shows or hides them. Other scores get chords suggested from the notes, and the button turns the
+   suggestions on or off. Each has its own remembered setting. */
+let leadSheet=false, leadOn=(()=>{ try{ return localStorage.getItem('smc.leadChords')!=='off'; }catch(e){ return true; } })();
+let keyTonic=0, keyMinor=false;
 function setChords(on){
-  chordsOn=!!on; try{ localStorage.setItem('smc.chords',chordsOn?'on':'off'); }catch(e){}
-  const b=$('#chordBtn'); if(b) b.setAttribute('aria-pressed',String(chordsOn));
+  if(leadSheet){ leadOn=!!on; try{ localStorage.setItem('smc.leadChords',leadOn?'on':'off'); }catch(e){} }
+  else { chordsOn=!!on; try{ localStorage.setItem('smc.chords',chordsOn?'on':'off'); }catch(e){} }
+  updateChordBtn();
 }
+function updateChordBtn(){
+  const b=$('#chordBtn'); if(!b) return;
+  const on=leadSheet?leadOn:chordsOn;
+  b.setAttribute('aria-pressed',String(on));
+  b.querySelector('span').textContent=leadSheet?'Chords':'Suggest chords';
+  b.title=leadSheet?'This is a lead sheet: show or hide its chord symbols':'Suggest chord names worked out from the notes';
+  $('#score').classList.toggle('hide-chords',leadSheet&&!leadOn);
+}
+
+/* ---------- chord explanations (shown when you hover over, or tap, a chord symbol) ---------- */
+const CHORD_TYPES=[ // longest spellings first
+  [/^(maj7|M7|Δ7|Δ)$/,'major seventh',[0,4,7,11],'a major chord with a 7th on top: soft and dreamy'],
+  [/^(m7b5|m7♭5|ø7?)$/,'half-diminished',[0,3,6,10],'a tense chord that usually leads to the V chord'],
+  [/^(dim7|°7)$/,'diminished seventh',[0,3,6,9],'a very tense chord that wants to move on'],
+  [/^(m7|min7|-7)$/,'minor seventh',[0,3,7,10],'a minor chord with a 7th: mellow and smooth'],
+  [/^(m6|min6)$/,'minor sixth',[0,3,7,9],'a minor chord with an added 6th'],
+  [/^(m9|min9)$/,'minor ninth',[0,3,7,10,14],'a rich, jazzy minor chord'],
+  [/^(madd9)$/,'minor add 9',[0,3,7,14],'a minor chord with an added 9th'],
+  [/^(m|min|-)$/,'minor',[0,3,7],'sounds darker or sadder than a major chord'],
+  [/^(dim|°)$/,'diminished',[0,3,6],'a tense, unstable chord'],
+  [/^(aug|\+)$/,'augmented',[0,4,8],'a stretched, restless sound'],
+  [/^(sus4|sus)$/,'suspended 4th',[0,5,7],'the 3rd is replaced by the 4th: open, waiting to resolve'],
+  [/^(sus2)$/,'suspended 2nd',[0,2,7],'the 3rd is replaced by the 2nd: open and airy'],
+  [/^(7sus4|7sus)$/,'seventh suspended 4th',[0,5,7,10],'a dominant chord holding off its 3rd'],
+  [/^(add9|add2)$/,'add 9',[0,4,7,14],'a major chord with an added 9th: bright and open'],
+  [/^(9)$/,'dominant ninth',[0,4,7,10,14],'a fuller dominant seventh chord'],
+  [/^(6)$/,'major sixth',[0,4,7,9],'a major chord with an added 6th: sweet, a little old-fashioned'],
+  [/^(7)$/,'dominant seventh',[0,4,7,10],'a major chord with a flat 7th: it wants to move to the chord a 5th below'],
+  [/^(5)$/,'power chord',[0,7],'just the root and 5th, neither major nor minor'],
+  [/^()$/,'major',[0,4,7],'bright and stable'],
+];
+function parseChordName(t){
+  const m=String(t).trim().replace(/♭/g,'b').replace(/♯/g,'#').match(/^([A-G])([#b]?)(.*?)(?:\/([A-G])([#b]?))?$/);
+  if(!m) return null;
+  const LET={C:0,D:2,E:4,F:5,G:7,A:9,B:11}, pcOf=(l,a)=>(LET[l]+(a==='#'?1:a==='b'?-1:0)+12)%12;
+  const type=CHORD_TYPES.find(([re])=>re.test(m[3]));
+  if(!type) return null;
+  return {root:pcOf(m[1],m[2]), rootName:m[1]+m[2], type, bass:m[4]?pcOf(m[4],m[5]):null, bassName:m[4]?m[4]+m[5]:''};
+}
+function chordExplain(t){
+  const c=parseChordName(t); if(!c) return null;
+  const flat=/b/.test(c.rootName)||c.rootName==='F'||(keyMinor&&[2,5,7,0].includes(keyTonic)&&!/#/.test(c.rootName));
+  const NM=flat?['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B']:['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+  const pretty=s=>s.replace(/b/g,'♭').replace(/#/g,'♯');
+  const [,typeName,iv,feel]=c.type;
+  const notes=iv.map(i=>NM[(c.root+i)%12]);
+  // its job in the key, as a Roman numeral (capitals for major chords, small letters for minor ones)
+  const deg=(c.root-keyTonic+12)%12;
+  const ROM=keyMinor?{0:'i',2:'ii',3:'III',5:'iv',7:'v',8:'VI',10:'VII'}:{0:'I',2:'ii',4:'iii',5:'IV',7:'V',9:'vi',11:'vii'};
+  const minorish=/minor|diminished|half/.test(typeName);
+  let role='';
+  if(ROM[deg]!=null){
+    let r=ROM[deg]; r=minorish?r.toLowerCase():r.toUpperCase();
+    if(/diminished/.test(typeName)) r+='°';
+    if(/seventh/.test(typeName)&&!/major seventh/.test(typeName)) r+='7';
+    const why={
+      I:'the home chord: music feels settled here', i:'the home chord: music feels settled here',
+      IV:'moves away from home; it often leads to V or back to I', iv:'moves away from home; it often leads to V or back to i',
+      V:'the dominant: it pulls strongly back to the home chord', V7:'the dominant seventh: the strongest pull back to the home chord',
+      v:'a softer dominant', vi:'the relative minor: a gentler, sadder colour of the home key',
+      ii:'often comes just before V', ii7:'often comes just before V', iii:'a soft link chord',
+      VI:'a warm chord that often follows i or V', III:'the relative major of this key', VII:'often leads to III or back to i',
+      'vii°':'a tense chord that leads to the home chord'
+    }[r]||'';
+    role=`<b>${r}</b> in ${esc(keyName.replace('♯','♯'))}${why?': '+why:''}.`;
+  } else role=`Not one of the main chords of ${esc(keyName)}: borrowed from another key for colour.`;
+  const bass=c.bass!=null&&c.bass!==c.root?`<div>Play it with <b>${NM[c.bass]}</b> as the lowest note (the "/${pretty(c.bassName)}").</div>`:'';
+  return `<div class="ct-name"><b>${esc(pretty(t))}</b> · ${esc(NM[c.root])} ${typeName}</div>
+    <div>Notes: <b>${notes.join(' · ')}</b></div>
+    <div class="ct-feel">${feel[0].toUpperCase()+feel.slice(1)}.</div>${bass}
+    <div class="ct-role">${role}</div>
+    <div class="ct-src">${leadSheet?'Written in this lead sheet.':'Suggested by Musisc from the notes, so treat it as a guide.'}</div>`;
+}
+let chordTipT=0;
+function showChordTip(el){
+  const html=chordExplain(el.textContent); if(!html) return;
+  let tip=$('#chordTip');
+  if(!tip){ tip=document.createElement('div'); tip.id='chordTip'; tip.className='chord-tip'; tip.setAttribute('role','tooltip'); document.body.appendChild(tip); }
+  tip.innerHTML=html; tip.hidden=false;
+  const r=el.getBoundingClientRect(), tw=Math.min(300,innerWidth-24);
+  tip.style.width=tw+'px';
+  const left=Math.max(12,Math.min(innerWidth-tw-12,r.left+r.width/2-tw/2));
+  const th=tip.offsetHeight, top=r.top-th-8>8?r.top-th-8:r.bottom+8;
+  tip.style.left=left+'px'; tip.style.top=top+'px';
+  clearTimeout(chordTipT);
+}
+function hideChordTip(){ const tip=$('#chordTip'); if(tip) tip.hidden=true; }
+function wireChordTips(){
+  document.querySelectorAll('#score .abcjs-chord').forEach(el=>{
+    el.addEventListener('pointerenter',e=>{ if(e.pointerType==='mouse') showChordTip(el); });
+    el.addEventListener('pointerleave',e=>{ if(e.pointerType==='mouse') hideChordTip(); });
+    el.addEventListener('pointerdown',e=>{ if(e.pointerType!=='mouse'){ showChordTip(el); clearTimeout(chordTipT); chordTipT=setTimeout(hideChordTip,5000); } });
+  });
+}
+addEventListener('scroll',hideChordTip,true);
 // abcjs's automatic line wrapping numbers every bar even when asked for row starts only,
 // so keep just the number at the left edge of each row and drop the rest.
 function trimBarNumbers(){
@@ -408,12 +529,15 @@ function loadAbc(abc){
   const L=scoreLayout(); lastLayout=L.key;
   const src=withBarNumbers(abc), opts0=/^Q:/m.test(src)?{}:{qpm:100};
   let v=renderScore(src,L);
-  if(chordsOn&&v&&v.lines&&v.lines.some(l=>l.staff)&&!hasChordSymbols(v)){
+  leadSheet=!!(v&&v.lines&&hasChordSymbols(v));
+  if(chordsOn&&!leadSheet&&v&&v.lines&&v.lines.some(l=>l.staff)){
     try{ const withCh=addChords(v,src,opts0); if(withCh){ const v2=renderScore(withCh,L); if(v2&&v2.lines&&v2.lines.some(l=>l.staff)) v=v2; else v=renderScore(src,L); } }
     catch(e){ console.warn('chords',e); v=renderScore(src,L); }
   }
   if(!v||!v.lines||!v.lines.some(l=>l.staff)) throw new Error('No music found in that notation.');
-  trimBarNumbers();
+  trimBarNumbers(); hideChordTip(); wireChordTips(); updateChordBtn();
+  { const k=v.lines.find(l=>l.staff).staff[0].key||{}, LET={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+    keyTonic=((LET[(k.root||'C')[0]]??0)+(k.acc==='#'?1:k.acc==='b'?-1:0)+12)%12; keyMinor=k.mode==='m'; }
   const hasTempo=!!(v.metaText&&v.metaText.tempo);
   try{ v.setUpAudio(hasTempo?{}:{qpm:100}); }catch(e){}
   const timer=new ABCJS.TimingCallbacks(v, hasTempo?{}:{qpm:100});
@@ -776,8 +900,10 @@ function setPlayBtn(on){
 }
 $('#playBtn').onclick=playOrResume;
 $('#metroBtn').onclick=()=>setMetro(!metroOn);
-setChords(chordsOn);
-$('#chordBtn').onclick=()=>{ if(play) pauseDemo(); setChords(!chordsOn); reloadKeep(); };
+$('#chordBtn').onclick=()=>{
+  if(leadSheet){ setChords(!leadOn); return; }      // the sheet's own chords: just show or hide them
+  if(play) pauseDemo(); setChords(!chordsOn); reloadKeep();
+};
 $('#dockPlay').onclick=playOrResume;
 $('#dockRestart').onclick=()=>{ resumeIdx=null; startDemo(firstNoteIndex()); };
 $('#fromHereBtn').onclick=()=>{ resumeIdx=null; startDemo(cur); };

@@ -120,7 +120,14 @@ select.btn{padding-right:10px}
 #metroBtn[aria-pressed="true"] .beat-dot{display:inline-block}
 #metroBtn.tick .beat-dot{opacity:1;transform:scale(1.25)}
 #metroBtn.tick.accent .beat-dot{background:var(--now)}
-#score svg .abcjs-chord{font-weight:600}
+#score svg .abcjs-chord{font-weight:600;cursor:help}
+#score.hide-chords svg .abcjs-chord{display:none}
+.chord-tip{position:fixed;z-index:80;padding:10px 12px;border-radius:10px;background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 8px 24px rgb(0 0 0/.28);font-size:.84rem;line-height:1.45;display:grid;gap:4px;pointer-events:none}
+.chord-tip[hidden]{display:none}
+.chord-tip .ct-name{font-size:.95rem}
+.chord-tip .ct-name b{color:var(--accent);font-size:1.05rem}
+.chord-tip .ct-feel,.chord-tip .ct-src{color:var(--muted)}
+.chord-tip .ct-src{font-size:.76rem}
 #micBtn.active{background:var(--bad);border-color:var(--bad);color:#fff}
 .mic-bar{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);display:grid;gap:8px}
 .mic-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.85rem;color:var(--muted)}
@@ -323,7 +330,7 @@ select.btn{padding-right:10px}
           <button class="btn toggle" id="metroBtn" type="button" aria-pressed="false" title="Metronome: a click on every beat, with the demo or on its own">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l3.5 18h-13z"/><path d="M12 15l5-8"/><path d="M7.5 15h9"/></svg> Metronome<i class="beat-dot" aria-hidden="true"></i></button>
           <button class="btn toggle" id="chordBtn" type="button" aria-pressed="true" title="Show chord names above the music (worked out from the notes)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6" fill="currentColor"/><circle cx="15" cy="12" r="1.6" fill="currentColor"/><circle cx="9" cy="17" r="1.6" fill="currentColor"/></svg> Chords</button>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6" fill="currentColor"/><circle cx="15" cy="12" r="1.6" fill="currentColor"/><circle cx="9" cy="17" r="1.6" fill="currentColor"/></svg> <span>Suggest chords</span></button>
           <button class="btn" id="micBtn" type="button" title="Play on your own piano: Musisc listens and guides you">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Practice with mic</button>
         </div>
