@@ -501,6 +501,7 @@ function setInstrument(id,noReload){
 }
 function instNoun(){ return INST.id==='voice'?'voice':INST.name.replace(/ \(.*\)$/,'').replace(/^Acoustic |^Electric /,'').toLowerCase(); }
 function applyInstUI(){
+  if(typeof fillSongs==='function'&&$('#songSel')) fillSongs();
   const piano=INST.view==='piano';
   const part=INST.part==='both'?'You play every note of the score.':INST.part==='bass'?'You play the bass line; the rest plays softly as backing.':'You play the melody (the top line); the rest plays softly as backing.';
   $('#instNote').textContent=part+(INST.note?' '+INST.note:'');
@@ -2160,10 +2161,9 @@ function fillSongs(){
   const list=songs();
   let h='<option value="">Open a song…</option>';
   if(list.length) h+='<optgroup label="My songs">'+list.map(s=>`<option value="m:${s.id}">${esc(s.title)}</option>`).join('')+'</optgroup>';
-  INSTRUMENTS.forEach(ins=>{
-    const ks=Object.keys(SAMPLES).filter(k=>(SAMPLE_FOR[k]||'piano')===ins.id); if(!ks.length) return;
-    h+=`<optgroup label="Samples for ${esc(ins.name)}">`+ks.map(k=>`<option value="s:${k}">${esc(SAMPLE_NAMES[k])}</option>`).join('')+'</optgroup>';
-  });
+  // only the samples for the instrument you picked (pick another instrument to see its samples)
+  const ks=Object.keys(SAMPLES).filter(k=>(SAMPLE_FOR[k]||'piano')===INST.id);
+  if(ks.length) h+=`<optgroup label="Samples for ${esc(INST.name)}">`+ks.map(k=>`<option value="s:${k}">${esc(SAMPLE_NAMES[k])}</option>`).join('')+'</optgroup>';
   if((currentSong||'').startsWith('m:')) h+='<optgroup label="This song"><option value="del">Remove from My songs</option></optgroup>';
   $('#songSel').innerHTML=h;
 }
