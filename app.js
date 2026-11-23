@@ -1271,6 +1271,152 @@ function wireChordPanel(){
   $('#strumUse').onchange=e=>{ strumUse=e.target.checked; try{ localStorage.setItem('smc.strumUse',strumUse?'on':'off'); }catch(x){} };
 }
 
+/* ---------- tuner ----------
+   Listens through the microphone and shows the note you play, how many cents sharp or flat it is,
+   and what to do about it for your instrument. String instruments get a button per string (auto picks
+   the nearest one; tap a string to hear its pitch and tune to it). Pitch detection: McLeod's normalised
+   autocorrelation on the signal at half rate, with parabolic peak refinement, about 20 readings a second. */
+const TUNER={on:false, stream:null, src:null, an:null, buf:null, timer:0, hist:[], target:null, a4:440, test:null};
+try{ TUNER.a4=+localStorage.getItem('smc.a4')||440; }catch(e){}
+function tunerStrings(){
+  if(INST.id==='uke') return UKE_STRINGS.slice();
+  if(INST.strings) return INST.strings.slice().sort((a,b)=>a-b);
+  return null;
+}
+function tunerNoteName(m){ // written pitch for B♭ and E♭ instruments; sounding pitch for octave-transposing guitar and bass
+  const t=INST.transpose%12?INST.transpose:0, w=m+t, pc=((w%12)+12)%12;
+  return {name:['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'][pc], oct:Math.floor(w/12)-1};
+}
+function freqOf(m){ return TUNER.a4*Math.pow(2,(m-69)/12); }
+function detectPitch(raw, sr){
+  // halve the rate: plenty for pitch, four times less work
+  const n=raw.length>>1, x=new Float32Array(n); let rms=0;
+  for(let i=0;i<n;i++){ const v=(raw[2*i]+raw[2*i+1])*.5; x[i]=v; rms+=v*v; }
+  rms=Math.sqrt(rms/n); if(rms<0.006) return null;
+  const fs=sr/2, minLag=Math.max(2,Math.floor(fs/1400)), maxLag=Math.min(n-64,Math.floor(fs/27));
+  const nsdf=new Float32Array(maxLag+1);
+  for(let tau=minLag;tau<=maxLag;tau++){ let acf=0, m=0; const lim=n-tau; for(let i=0;i<lim;i++){ const a=x[i], b=x[i+tau]; acf+=a*b; m+=a*a+b*b; } nsdf[tau]=m>0?2*acf/m:0; }
+  // key maxima: the highest point between each pair of rising zero crossings
+  const peaks=[]; let pos=false, best=-1, bi=0;
+  for(let t=minLag;t<=maxLag;t++){
+    const v=nsdf[t];
+    if(!pos&&v>0&&nsdf[t-1]<=0){ pos=true; best=-1; }
+    if(pos){ if(v>best){ best=v; bi=t; } if(v<=0){ peaks.push([bi,best]); pos=false; } }
+  }
+  if(pos&&best>0) peaks.push([bi,best]);
+  if(!peaks.length) return null;
+  const top=Math.max(...peaks.map(p=>p[1])), pick=peaks.find(p=>p[1]>=top*.93);
+  if(!pick||pick[1]<.6) return null;
+  const t=pick[0], a=nsdf[t-1]||0, b=nsdf[t], c=nsdf[t+1]||0, den=a-2*b+c, shift=den?.5*(a-c)/den:0;
+  return {f:fs/(t+shift), clarity:pick[1], rms};
+}
+function tunerAdvice(c){
+  const fam=INST.view==='fret'?'string':INST.id==='voice'?'voice':['trumpet','trombone'].includes(INST.id)?'brass':INST.view==='wind'?'wind':'keys';
+  const flat=c<0;
+  return {string:flat?'Too low: tighten the string a little (tune up).':'Too high: loosen the string a little (tune down).',
+    wind:flat?'Too low (flat): push the mouthpiece or head joint in a little.':'Too high (sharp): pull the mouthpiece or head joint out a little.',
+    brass:flat?'Too low (flat): push the main tuning slide in a little.':'Too high (sharp): pull the main tuning slide out a little.',
+    voice:flat?'A little low: lift the note slightly.':'A little high: relax the note down slightly.',
+    keys:flat?'This note is flat.':'This note is sharp.'}[fam];
+}
+function tunerShow(r){
+  const nameEl=$('#tunName'), centsEl=$('#tunCents'), needle=$('#tunNeedle'), tip=$('#tunTip');
+  if(!r){ tip.textContent=TUNER.target!=null?'Play the string you picked and let it ring.':'Play one note and let it ring.'; return; }
+  const strs=tunerStrings();
+  let ref;
+  const m=69+12*Math.log2(r.f/TUNER.a4);
+  if(TUNER.target!=null) ref=TUNER.target;
+  else if(strs){ const near=strs.reduce((p,s)=>Math.abs(s-m)<Math.abs(p-m)?s:p); ref=Math.abs(near-m)<=2.5?near:Math.round(m); }
+  else ref=Math.round(m);
+  let c=1200*Math.log2(r.f/freqOf(ref));
+  TUNER.hist.push(c); if(TUNER.hist.length>5) TUNER.hist.shift();
+  const sorted=TUNER.hist.slice().sort((a,b)=>a-b); c=sorted[sorted.length>>1];
+  const nn=tunerNoteName(ref);
+  nameEl.innerHTML=esc(nn.name)+`<small>${nn.oct}</small>`;
+  const shown=Math.max(-50,Math.min(50,c)), ok=Math.abs(c)<5;
+  needle.style.left=(50+shown)+'%';
+  $('.tuner').classList.toggle('in-tune',ok);
+  centsEl.textContent=(c>0?'+':'')+Math.round(c)+' cents';
+  $('#tunHz').textContent=r.f.toFixed(1)+' Hz';
+  tip.textContent=ok?'In tune!':Math.abs(c)>50?(c<0?'Far too low. ':'Far too high. ')+tunerAdvice(c):tunerAdvice(c);
+  document.querySelectorAll('#tunStrings [data-m]').forEach(b=>b.classList.toggle('near',+b.dataset.m===ref));
+}
+function tunerTick(){
+  if(!TUNER.on) return;
+  TUNER.an.getFloatTimeDomainData(TUNER.buf);
+  const r=detectPitch(TUNER.buf,ctx.sampleRate);
+  if(!r) TUNER.hist=[];
+  tunerShow(r);
+  const lvl=r?Math.min(100,r.rms*900):0; $('#tunLevel').style.width=lvl+'%';
+}
+function renderTunerStrings(){
+  const box=$('#tunStrings'), strs=tunerStrings();
+  if(strs){
+    box.innerHTML=`<button type="button" class="btn mini toggle" data-auto aria-pressed="${TUNER.target==null}">Auto</button>`+strs.map((m,i)=>{ const nn=tunerNoteName(m); return `<button type="button" class="btn mini toggle" data-m="${m}" aria-pressed="${TUNER.target===m}" title="Play ${esc(nn.name+nn.oct)} and tune to it">${esc(nn.name)}<small>${nn.oct}</small></button>`; }).join('');
+  } else {
+    const refs=INST.view==='piano'?[60,69]:INST.id==='trombone'?[58,53]:INST.id==='voice'?[60,69]:[70,69];
+    box.innerHTML='<span class="small">Tuning notes:</span>'+refs.map(m=>{ const nn=tunerNoteName(m); const concert=INST.transpose%12?` (concert ${['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'][m%12]})`:''; return `<button type="button" class="btn mini" data-ref="${m}">▶ ${esc(nn.name)}<small>${nn.oct}</small>${concert}</button>`; }).join('');
+  }
+}
+async function tunerOpen(){
+  if(MIC.on) micStop(true);
+  if(play) pauseDemo();
+  metroStopFree&&metroStopFree();
+  $('#tunerOv').hidden=false; $('#tunInst').textContent=INST.name;
+  $('#tunA4').value=String(TUNER.a4); TUNER.target=null; TUNER.hist=[]; renderTunerStrings();
+  $('#tunName').innerHTML='–'; $('#tunCents').textContent=''; $('#tunHz').textContent=''; $('#tunNeedle').style.left='50%'; $('.tuner').classList.remove('in-tune');
+  $('#tunTip').textContent='Starting the microphone…';
+  if(TUNER.on) return;
+  audio();
+  try{
+    if(TUNER.test){ TUNER.src=TUNER.test; }
+    else{
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('no mic'),{name:'NotFoundError'});
+      setAudioSession('play-and-record');
+      TUNER.stream=await openMic(micPref()); TUNER.src=ctx.createMediaStreamSource(TUNER.stream);
+    }
+  }catch(e){
+    setAudioSession('playback');
+    const blocked=e&&(e.name==='NotAllowedError'||e.name==='SecurityError');
+    $('#tunTip').innerHTML=blocked?(sampleFn?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to use the tuner.':'Musisc needs permission to use the microphone. Allow it next to the address bar, then open the tuner again.'):'No microphone was found.';
+    return;
+  }
+  // low instruments need a longer listening window to catch several cycles of a slow wave
+  const N=INST.range[0]<40?8192:4096;
+  TUNER.an=ctx.createAnalyser(); TUNER.an.fftSize=N; TUNER.buf=new Float32Array(N);
+  TUNER.src.connect(TUNER.an);
+  TUNER.on=true; TUNER.timer=setInterval(tunerTick,50);
+  if(!TUNER.test) keepAwake(true);
+  $('#tunTip').textContent='Play one note and let it ring.';
+}
+function tunerClose(){
+  $('#tunerOv').hidden=true;
+  if(!TUNER.on) return;
+  TUNER.on=false; clearInterval(TUNER.timer);
+  try{ TUNER.src.disconnect(); }catch(e){}
+  if(TUNER.stream){ TUNER.stream.getTracks().forEach(t=>t.stop()); TUNER.stream=null; }
+  TUNER.src=null; if(!TUNER.test){ setAudioSession('playback'); keepAwake(false); }
+}
+function wireTuner(){
+  $('#tunerBtn').onclick=tunerOpen;
+  $('#tunClose').onclick=tunerClose;
+  $('#tunerOv').addEventListener('click',e=>{ if(e.target.id==='tunerOv') tunerClose(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#tunerOv').hidden) tunerClose(); });
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden&&TUNER.on) tunerClose(); });
+  $('#tunA4').onchange=e=>{ TUNER.a4=+e.target.value; try{ localStorage.setItem('smc.a4',String(TUNER.a4)); }catch(x){} TUNER.hist=[]; };
+  $('#tunStrings').onclick=e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    if(b.hasAttribute('data-auto')) TUNER.target=null;
+    else if(b.dataset.m){ TUNER.target=+b.dataset.m; refTone(TUNER.target); }
+    else if(b.dataset.ref){ refTone(+b.dataset.ref); return; }
+    TUNER.hist=[]; renderTunerStrings();
+  };
+}
+function refTone(m){ // the target pitch at the chosen A4, in your instrument's sound
+  audio(); const t=ctx.currentTime+.03, off=1200*Math.log2(TUNER.a4/440)/100;
+  tone(m+off,t,1.8,undefined,.5,false);
+}
+
 // abcjs's automatic line wrapping numbers every bar even when asked for row starts only,
 // so keep just the number at the left edge of each row and drop the rest.
 function trimBarNumbers(){
@@ -2932,5 +3078,5 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 })();
 
 // your instrument: build the picker and set up the page for it
-wireChordPanel(); buildInstPicker(); applyInstUI();
+wireChordPanel(); wireTuner(); buildInstPicker(); applyInstUI();
 $('#instSample').onclick=e=>{ const k=e.currentTarget.dataset.k; if(!k) return; try{ loadAbc(SAMPLES[k]); currentSong='s:'+k; fillSongs(); showView('score'); setStatus(''); }catch(err){ setStatus(esc(err.message),'err'); } };

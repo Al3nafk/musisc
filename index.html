@@ -159,9 +159,32 @@ select.btn{padding-right:10px}
 .strum-diagram svg{display:block}
 .strum-key{margin:0}
 @media (max-width:640px){ .cpn-grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))} #capoSel,#strumSel{font-size:16px} }
+.tuner-ov{position:fixed;inset:0;z-index:90;background:rgb(0 0 0/.45);display:grid;place-items:center;padding:16px}
+.tuner-ov[hidden]{display:none}
+.tuner{position:relative;width:min(420px,100%);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;display:grid;gap:12px;justify-items:center;box-shadow:0 16px 40px rgb(0 0 0/.35)}
+.tun-title{font-size:.85rem;color:var(--muted);font-weight:600}
+.tun-note{font-family:var(--f-display);font-size:4rem;font-weight:700;line-height:1;color:var(--ink);min-height:4rem}
+.tun-note small{font-size:1.4rem;color:var(--muted);margin-left:2px}
+.tuner.in-tune .tun-note{color:var(--good)}
+.tun-meter{width:100%}
+.tun-scale{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-bottom:4px;font-variant-numeric:tabular-nums}
+.tun-track{position:relative;height:30px;border-radius:15px;background:linear-gradient(90deg,color-mix(in srgb,var(--bad) 35%,var(--bg)),var(--bg) 40%,var(--bg) 60%,color-mix(in srgb,var(--bad) 35%,var(--bg)));border:1px solid var(--line)}
+.tun-zone{position:absolute;left:45%;width:10%;top:0;bottom:0;background:color-mix(in srgb,var(--good) 30%,transparent)}
+.tun-needle{position:absolute;top:-4px;bottom:-4px;width:4px;margin-left:-2px;left:50%;border-radius:2px;background:var(--now);transition:left .12s ease-out}
+.tuner.in-tune .tun-needle{background:var(--good)}
+.tun-read{min-height:1.4em;font-variant-numeric:tabular-nums}
+.tun-tip{min-height:2.6em;text-align:center;font-size:.95rem}
+.tuner.in-tune .tun-tip{color:var(--good);font-weight:600}
+.tun-strings{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center}
+.tun-strings .btn small{font-size:.65em;margin-left:1px;opacity:.75}
+.tun-strings .btn.near{border-color:var(--now);box-shadow:inset 0 0 0 1px var(--now)}
+.tun-foot{display:flex;gap:12px;align-items:center;font-size:.82rem;color:var(--muted);width:100%;justify-content:space-between}
+.tun-foot .mic-meter{flex:1;max-width:160px}
+#tunA4{font:inherit;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:inherit}
+@media (max-width:640px){ #tunA4{font-size:16px} .tun-note{font-size:3.4rem} }
 .chord-pop{position:fixed;z-index:85;padding:12px 14px 14px;border-radius:12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 10px 30px rgb(0 0 0/.32);display:grid;gap:8px;justify-items:center;font-size:.85rem;line-height:1.45}
 .chord-pop[hidden]{display:none}
-.chord-pop .cp-close{position:absolute;top:6px;right:8px;border:0;background:none;font-size:1.3rem;line-height:1;color:var(--muted);padding:4px 6px;cursor:pointer}
+.chord-pop .cp-close,.tuner .cp-close{position:absolute;top:6px;right:8px;border:0;background:none;font-size:1.3rem;line-height:1;color:var(--muted);padding:4px 6px;cursor:pointer}
 .chord-pop .cp-name{font-family:var(--f-display);font-size:1.4rem;font-weight:700;color:var(--accent)}
 .chord-pop .cp-diagram{max-width:100%;overflow-x:auto;background:var(--bg);border-radius:8px;padding:8px}
 .chord-pop .cp-diagram svg{display:block;max-width:100%;height:auto}
@@ -331,7 +354,7 @@ select.btn{padding-right:10px}
   </header>
 
   <section class="inst" id="instSec" aria-label="Your instrument">
-    <div class="inst-head"><b>Your instrument</b><span class="small" id="instNote"></span><button type="button" class="btn mini" id="instSample" hidden></button></div>
+    <div class="inst-head"><b>Your instrument</b><span class="small" id="instNote"></span><button type="button" class="btn mini" id="instSample" hidden></button><button type="button" class="btn mini" id="tunerBtn" title="Tune your instrument with the microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="13" height="13"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-7"/></svg> Tuner</button></div>
     <div class="inst-list" id="instList"></div>
   </section>
   <section class="intake" id="intake" aria-label="Add sheet music">
@@ -482,6 +505,22 @@ select.btn{padding-right:10px}
     </div>
     <div class="kb-scroll" id="kbScroll"><div class="kb-inner" id="kbInner"><canvas id="roll" class="roll" aria-label="Falling notes"></canvas><div class="kb" id="kb"></div></div></div>
     <div class="inst-view" id="instView" hidden aria-live="polite"></div>
+  </div>
+</div>
+<div class="tuner-ov" id="tunerOv" hidden>
+  <div class="tuner" role="dialog" aria-label="Tuner" aria-modal="true">
+    <button type="button" class="cp-close" id="tunClose" aria-label="Close tuner">×</button>
+    <div class="tun-title">Tuner · <span id="tunInst"></span></div>
+    <div class="tun-note" id="tunName">–</div>
+    <div class="tun-meter" aria-hidden="true">
+      <div class="tun-scale"><span>−50</span><span>−25</span><span>0</span><span>+25</span><span>+50</span></div>
+      <div class="tun-track"><i class="tun-zone"></i><i class="tun-needle" id="tunNeedle"></i></div>
+    </div>
+    <div class="tun-read" aria-live="polite"><b id="tunCents"></b> <span id="tunHz" class="small"></span></div>
+    <div class="tun-tip" id="tunTip" aria-live="polite"></div>
+    <div class="tun-strings" id="tunStrings"></div>
+    <div class="tun-foot"><span class="mic-meter" title="Microphone level"><i id="tunLevel"></i></span>
+      <label for="tunA4">A4 = <select id="tunA4"><option>432</option><option>435</option><option>438</option><option>439</option><option selected>440</option><option>441</option><option>442</option><option>443</option><option>444</option><option>446</option></select> Hz</label></div>
   </div>
 </div>
 <div class="drop-overlay" id="dropOv" hidden><div>Drop your sheet music</div></div>
