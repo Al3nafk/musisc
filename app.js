@@ -244,13 +244,151 @@ function scoreLayout(){
   const bars=4, width=Math.round(Math.max(560,Math.min(760,w-8))); // always 4 bars a row; narrow screens draw at 560+ and scale down
   return {bars, width, key:bars+':'+(w<640?Math.round(width/40):'w')};
 }
+function reloadKeep(){ // redraw the current score, keeping the place and speed
+  if(!vis) return;
+  const at=cur, sp=speedF;
+  try{ loadAbc($('#abcText').value); setSpeed(sp,'load'); if(events[at]) goTo(at,false); }catch(e){}
+}
 let relayoutT=0;
 addEventListener('resize',()=>{ clearTimeout(relayoutT); relayoutT=setTimeout(()=>{
   if(!vis||play||(typeof MIC!=='undefined'&&MIC.on)||!$('#score').clientWidth) return;
   if(scoreLayout().key===lastLayout) return;
-  const at=cur, sp=speedF;
-  try{ loadAbc($('#abcText').value); setSpeed(sp,'load'); if(events[at]) goTo(at,false); }catch(e){}
+  reloadKeep();
 },300); });
+// 4 bars a row: abcjs drops to fewer bars on busy music, so redraw wider (the score is then
+// scaled down to fit the screen) until no row except the last has fewer than 4 bars.
+function renderScore(src,L){
+  let v=null;
+  for(const k of [1,1.4,1.9,2.6]){
+    const out=ABCJS.renderAbc('score', src, {add_classes:true, responsive:'resize', staffwidth:Math.round(L.width*k),
+      wrap:{minSpacing:1.4,maxSpacing:3.2,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
+    v=out&&out[0];
+    if(!v||!v.lines) break;
+    const rows=v.lines.filter(l=>l.staff).map(l=>(l.staff[0].voices[0]||[]).filter(e=>e.el_type==='bar').length);
+    if(rows.slice(0,-1).every(n=>n>=L.bars)) break;
+  }
+  return v;
+}
+
+/* ---------- chord names ----------
+   Works out a chord for each bar (each half bar in 4/4, 6/8 and 12/8) from every note sounding in it,
+   weighted by how long it sounds, and writes it into the notation as a chord symbol so abcjs lays it
+   out above the staff. Only names a chord when the notes clearly fit one; scores that already have
+   chord symbols keep their own. */
+let chordsOn=(()=>{ try{ return localStorage.getItem('smc.chords')!=='off'; }catch(e){ return true; } })();
+const CHORD_Q=[['',[0,4,7],0],['m',[0,3,7],0],['7',[0,4,7,10],.06],['m7',[0,3,7,10],.09],
+  ['dim',[0,3,6],.05],['aug',[0,4,8],.08],['sus4',[0,5,7],.07]];
+const PC_SHARP=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'], PC_FLAT=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+function hasChordSymbols(v){
+  return v.lines.some(l=>l.staff&&l.staff.some(s=>(s.voices||[]).some(vo=>vo.some(e=>e.chord&&e.chord.some(c=>!c.position||c.position==='default')))));
+}
+function guessChord(w,bass,names,slash,mono){
+  const total=w.reduce((a,b)=>a+b,0); if(total<=0) return null;
+  const has=pc=>w[pc]>total*.08;
+  if(w.filter((x,i)=>has(i)).length<2) return null;
+  let best=null;
+  for(let r=0;r<12;r++){
+    if(!has(r)) continue;
+    for(const [suf,iv,cx] of CHORD_Q){
+      if(mono&&iv.length>3) continue;                                     // a single melody line: triads only
+      const tones=iv.map(i=>(r+i)%12), got=tones.filter(has).length;
+      if(w[tones[1]]<total*(suf==="sus4"?.08:.03)) continue;               // needs its 3rd (or the 4th for sus4)
+      if(iv.length>3&&(w[tones[3]]<total*(suf==='7'?.12:.18)||got<3)) continue; // a 7th chord needs a clear 7th
+      if((suf==='dim'||suf==='aug'||suf==='sus4')&&got<3) continue;
+      const inn=tones.reduce((a,t)=>a+w[t],0);
+      if(inn/total<(mono?.85:.72)) continue;
+      const score=inn-(total-inn)-(iv.length-got)*.15*total-cx*total+(bass===r?.12*total:0);
+      if(!best||score>best.score) best={score,r,suf,tones};
+    }
+  }
+  if(!best) return null;
+  let name=names[best.r]+best.suf;
+  if(slash&&bass!=null&&bass!==best.r&&best.tones.includes(bass)) name+='/'+names[bass];
+  return {name,tones:best.tones};
+}
+// abcjs reports a 4-beat bar length even in 3/4, so work it out: ms per beat x bar length / beat length
+function barMsOf(v,t){
+  const mpb=t.millisecondsPerBeat, bl=v.getBeatLength&&v.getBeatLength(), bar=v.getBarLength&&v.getBarLength();
+  return mpb&&bl&&bar?mpb*bar/bl:(t.millisecondsPerMeasure||2400);
+}
+function addChords(v,src,opts){
+  try{ v.setUpAudio(opts); }catch(e){}
+  const timer=new ABCJS.TimingCallbacks(v,opts);
+  const nt=(timer.noteTimings||[]).filter(e=>e.type==='event'); if(!nt.length) return null;
+  const mpm=barMsOf(v,timer), mf=(v.getMeterFraction&&v.getMeterFraction())||{num:4,den:4};
+  const measureWhole=mf.num/mf.den, halves=[4,6,12].includes(mf.num);
+  const names=(((v.lines.find(l=>l.staff).staff[0].key||{}).accidentals||[]).some(a=>a.acc==='flat'))?PC_FLAT:PC_SHARP;
+  const mstart={};
+  const evs=nt.map(e=>{
+    const parts=(e.startCharArray||[e.startChar]).map((sc,i)=>{
+      const el=e.elements&&e.elements[i]&&e.elements[i][0], c=el&&el.getAttribute?el.getAttribute('class')||'':'';
+      return {sc, v:+((c.match(/abcjs-v(\d+)/)||[0,99])[1]), mm:+((c.match(/abcjs-mm(\d+)/)||[0,-1])[1]), line:+((c.match(/abcjs-l(\d+)/)||[0,-1])[1])};
+    }).filter(p=>typeof p.sc==='number'&&p.sc>=0).sort((a,b)=>a.v-b.v);
+    const mm=parts.length?parts[0].mm:-1;
+    if(mm>=0) mstart[mm]=Math.min(mstart[mm]??Infinity,e.milliseconds);
+    const pitches=(e.midiPitches||[]).filter(p=>p.cmd!=='rest'&&typeof p.pitch==='number')
+      .map(p=>({midi:p.pitch, dur:(typeof p.duration==='number'?p.duration:.25)/measureWhole*mpm}));
+    return {ms:e.milliseconds, parts, pitches};
+  });
+  const mms=Object.keys(mstart).map(Number).sort((a,b)=>a-b), bars=[];
+  const seg=(s,e)=>({s,e,w:new Array(12).fill(0),bass:null,bassOv:0});
+  const beat=mpm/((mf.den===8&&mf.num%3===0&&mf.num>3)?mf.num/3:mf.num);
+  mms.forEach((m,i)=>{
+    const s=mstart[m], end=i+1<mms.length?mstart[mms[i+1]]:s+mpm, mid=s+(end-s)/2;
+    bars.push({whole:seg(s,end), halves:halves&&end-s>mpm*.75?[seg(s,mid),seg(mid,end)]:null});
+  });
+  const fill=list=>{
+    let first=0;
+    evs.forEach(ev=>{
+      while(first<list.length-1&&list[first].e<=ev.ms) first++;
+      ev.pitches.forEach(p=>{
+        const en=ev.ms+p.dur;
+        for(let k=first;k<list.length&&list[k].s<en;k++){
+          const g=list[k], ov=Math.min(en,g.e)-Math.max(ev.ms,g.s); if(ov<=0) continue;
+          // notes on the beat shape the harmony; quick notes between beats are often just passing
+          const off=(ev.ms-g.s)%beat, onBeat=ev.ms>=g.s-1&&(off<25||off>beat-25);
+          g.w[p.midi%12]+=ov*(Math.abs(ev.ms-g.s)<25?1.4:onBeat?1.15:p.dur<beat*.6?.65:.85);
+          if(ov>=(g.e-g.s)*.2&&(g.bass==null||p.midi<g.bass)){ g.bass=p.midi; g.bassOv=ov; }
+        }
+      });
+    });
+  };
+  fill(bars.map(b=>b.whole)); fill(bars.flatMap(b=>b.halves||[]));
+  // one line of melody only (no two notes at once): name a chord only when the notes spell it out
+  const mono=evs.every(ev=>ev.pitches.length<=1);
+  const guess=g=>guessChord(g.w,g.bass==null?null:g.bass%12,names,!mono&&g.bassOv>=(g.e-g.s)*.45,mono);
+  // a half bar only gets its own chord when the two halves really differ and the whole-bar chord can't cover both
+  const fits=(g,c)=>{ const t=g.w.reduce((a,b)=>a+b,0); return !!c&&g.w.every((x,pc)=>x<=t*.15||c.tones.includes(pc)); };
+  const labels=[];
+  bars.forEach(b=>{
+    const W=guess(b.whole);
+    if(b.halves){
+      const H=b.halves.map(guess);
+      if(H[0]&&H[1]&&H[0].name!==H[1].name&&!(fits(b.halves[0],W)&&fits(b.halves[1],W))){ labels.push([b.halves[0],H[0]],[b.halves[1],H[1]]); return; }
+      if(!W){ b.halves.forEach((g,i)=>{ if(H[i]) labels.push([g,H[i]]); }); return; }
+    }
+    if(W) labels.push([b.whole,W]);
+  });
+  const ins=[]; let prev='', prevLine=-1, j=0;
+  labels.forEach(([g,c])=>{
+    while(j<evs.length&&evs[j].ms<g.s-1) j++;
+    let ev=null;
+    for(let k=j;k<evs.length&&evs[k].ms<g.s+(g.e-g.s)*.5;k++) if(evs[k].parts.length){ ev=evs[k]; break; }
+    if(!ev) return;
+    const part=ev.parts[0];
+    if(c.name===prev&&part.line===prevLine) return;
+    prev=c.name; prevLine=part.line;
+    ins.push({sc:part.sc, text:'"'+c.name+'"'});
+  });
+  if(!ins.length) return null;
+  let out=src; const seen=new Set();
+  ins.sort((a,b)=>b.sc-a.sc).forEach(x=>{ if(seen.has(x.sc)) return; seen.add(x.sc); out=out.slice(0,x.sc)+x.text+out.slice(x.sc); });
+  return out;
+}
+function setChords(on){
+  chordsOn=!!on; try{ localStorage.setItem('smc.chords',chordsOn?'on':'off'); }catch(e){}
+  const b=$('#chordBtn'); if(b) b.setAttribute('aria-pressed',String(chordsOn));
+}
 // abcjs's automatic line wrapping numbers every bar even when asked for row starts only,
 // so keep just the number at the left edge of each row and drop the rest.
 function trimBarNumbers(){
@@ -268,17 +406,11 @@ function trimBarNumbers(){
 function loadAbc(abc){
   stopDemo(); resumeIdx=null; if(typeof setPlayBtn==='function'&&$('#dockPlay')) setPlayBtn(false);
   const L=scoreLayout(); lastLayout=L.key;
-  // 4 bars a row: abcjs drops to fewer bars on busy music, so redraw wider (the score is then
-  // scaled down to fit the screen) until no row except the last has fewer than 4 bars.
-  const src=withBarNumbers(abc);
-  let out, v;
-  for(const k of [1,1.4,1.9,2.6]){
-    out=ABCJS.renderAbc('score', src, {add_classes:true, responsive:'resize', staffwidth:Math.round(L.width*k),
-      wrap:{minSpacing:1.4,maxSpacing:3.2,preferredMeasuresPerLine:L.bars}, clickListener:onNoteClick, paddingleft:4, paddingright:4});
-    v=out&&out[0];
-    if(!v||!v.lines) break;
-    const rows=v.lines.filter(l=>l.staff).map(l=>(l.staff[0].voices[0]||[]).filter(e=>e.el_type==='bar').length);
-    if(rows.slice(0,-1).every(n=>n>=L.bars)) break;
+  const src=withBarNumbers(abc), opts0=/^Q:/m.test(src)?{}:{qpm:100};
+  let v=renderScore(src,L);
+  if(chordsOn&&v&&v.lines&&v.lines.some(l=>l.staff)&&!hasChordSymbols(v)){
+    try{ const withCh=addChords(v,src,opts0); if(withCh){ const v2=renderScore(withCh,L); if(v2&&v2.lines&&v2.lines.some(l=>l.staff)) v=v2; else v=renderScore(src,L); } }
+    catch(e){ console.warn('chords',e); v=renderScore(src,L); }
   }
   if(!v||!v.lines||!v.lines.some(l=>l.staff)) throw new Error('No music found in that notation.');
   trimBarNumbers();
@@ -290,7 +422,7 @@ function loadAbc(abc){
   vis=v; $('#abcText').value=abc;
   tuneBpm=hasTempo&&v.getBpm?v.getBpm():100;
   setSpeed(1,'load');
-  msPerMeasure=timer.millisecondsPerMeasure|| (nt[1]?nt[1].milliseconds*4:2400);
+  msPerMeasure=barMsOf(v,timer)|| (nt[1]?nt[1].milliseconds*4:2400);
   meter=(v.getMeterFraction&&v.getMeterFraction())||{num:4,den:4};
   const first=v.lines.find(l=>l.staff);
   const st=first.staff;
@@ -323,6 +455,10 @@ function loadAbc(abc){
   const lo=Math.min(21,...all), hi=Math.max(109,...all.map(m=>m+1));
   kbRange=[lo,hi]; buildKeyboard();
   notes=events.flatMap(e=>e.pitches.map(p=>({midi:p.midi,start:e.ms,dur:Math.max(60,p.ms-20),hand:handOf(p.midi)})));
+  // where bar 1's downbeat falls (after a pickup bar), so metronome clicks line up with the bars
+  const mmStart={};
+  events.forEach(e=>{ const el=e.els[0], c=(el&&el.getAttribute&&el.getAttribute('class'))||'', m=c.match(/abcjs-mm(\d+)/); if(m) mmStart[m[1]]=Math.min(mmStart[m[1]]??Infinity,e.ms); });
+  barOrigin=mmStart[1]!=null?mmStart[1]-msPerMeasure:0;
   rollHead=rollTarget=0; requestAnimationFrame(measureKeys);
   goTo(firstNoteIndex(), false);
 }
@@ -547,7 +683,8 @@ function startDemo(from=firstNoteIndex()){
   list.sort((a,b)=>a.start-b.start);
   const last=events[events.length-1];
   const endT=t0+((last.ms-base)+last.gap)/1000/sp+.3;
-  play={bus,t0,base,sp,idx:from-1,endT,raf:0,list,next:0,pedal:win>0,timer:0};
+  metroStopFree();
+  play={bus,t0,base,sp,idx:from-1,endT,endMs:last.ms+last.gap,raf:0,list,next:0,pedal:win>0,timer:0,beat:null};
   scheduleAhead();
   play.timer=setInterval(scheduleAhead,200); // keeps the sound going even when the screen skips frames
   $('#lessonMode').textContent='Demo: follow along';
@@ -566,6 +703,46 @@ function startDemo(from=firstNoteIndex()){
   };
   play.raf=requestAnimationFrame(tick);
 }
+/* ---------- metronome ----------
+   Clicks every beat, the first beat of each bar higher. While the demo plays, the clicks are scheduled
+   with the music (same lookahead) so they stay exactly on the beat; otherwise it ticks on its own at the
+   current tempo. Compound time (6/8, 9/8, 12/8) clicks the dotted-quarter beat. */
+let metroOn=false, metroFree=null, metroBus=null, barOrigin=0;
+function beatsPerBar(){ return (meter.den===8&&meter.num%3===0&&meter.num>3)?meter.num/3:meter.num; }
+function beatMs(){ return msPerMeasure/beatsPerBar(); }
+function metroOut(){ if(!metroBus){ metroBus=ctx.createGain(); metroBus.gain.value=1; metroBus.connect(master); } return metroBus; }
+function metroCut(){ if(!metroBus) return; const b=metroBus; metroBus=null; try{ b.gain.setTargetAtTime(0,ctx.currentTime,.01); setTimeout(()=>b.disconnect(),200); }catch(e){} }
+function metroClick(at,accent){
+  const o=ctx.createOscillator(), g=ctx.createGain();
+  o.type='triangle'; o.frequency.value=accent?1760:1175;
+  g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(accent?.55:.35,at+.002); g.gain.exponentialRampToValueAtTime(0.0001,at+.06);
+  o.connect(g); g.connect(metroOut()); o.start(at); o.stop(at+.08);
+  const b=$('#metroBtn'); if(b) setTimeout(()=>{ if(!metroOn) return; b.classList.toggle('accent',accent); b.classList.add('tick'); setTimeout(()=>b.classList.remove('tick'),90); },Math.max(0,(at-ctx.currentTime)*1000));
+}
+function metroDemo(p,until){ // called from scheduleAhead while the demo plays
+  if(!metroOn){ p.beat=null; return; }
+  const bm=beatMs(), bpb=beatsPerBar();
+  if(p.beat==null){ const nowMs=Math.max(p.base,(ctx.currentTime-p.t0)*1000*p.sp+p.base); p.beat=Math.ceil((nowMs-barOrigin)/bm-1e-6); }
+  for(;;){
+    const ms=barOrigin+p.beat*bm; if(ms>p.endMs) break;
+    const at=p.t0+(ms-p.base)/1000/p.sp; if(at>until) break;
+    if(at>=ctx.currentTime-.02) metroClick(at,((p.beat%bpb)+bpb)%bpb===0);
+    p.beat++;
+  }
+}
+function metroFreeTick(){
+  const f=metroFree; if(!f) return;
+  if(!metroOn||play||MIC.on){ metroStopFree(); return; }
+  while(f.next<ctx.currentTime+.3){ metroClick(f.next,f.k%beatsPerBar()===0); f.k++; f.next+=beatMs()/1000/speed(); }
+}
+function metroStartFree(){ if(metroFree||!metroOn||play||MIC.on||!events.length) return; audio(); metroFree={next:ctx.currentTime+.12,k:0,timer:setInterval(metroFreeTick,50)}; metroFreeTick(); }
+function metroStopFree(){ if(!metroFree) return; clearInterval(metroFree.timer); metroFree=null; metroCut(); }
+function setMetro(on){
+  metroOn=!!on;
+  const b=$('#metroBtn'); if(b){ b.setAttribute('aria-pressed',String(metroOn)); b.classList.remove('tick','accent'); }
+  if(!metroOn){ metroStopFree(); metroCut(); if(play) play.beat=null; }
+  else if(!play) metroStartFree();
+}
 const LOOKAHEAD=2.5; // seconds of music queued in the audio engine
 function scheduleAhead(){
   if(!play) return;
@@ -576,13 +753,14 @@ function scheduleAhead(){
     if(at>=ctx.currentTime-0.05) tone(n.midi,at,Math.max(.1,(n.end-n.start)/1000/p.sp),p.bus,n.vel,p.pedal);
     p.next++;
   }
+  metroDemo(p,until);
 }
 let resumeIdx=null; // where Play continues after a pause
 function pauseDemo(){ if(!play) return; resumeIdx=Math.max(0,play.idx); stopDemo(); goTo(resumeIdx,false); setPlayBtn(false); }
 function playOrResume(){ if(play) return pauseDemo(); const from=resumeIdx!=null?resumeIdx:firstNoteIndex(); resumeIdx=null; startDemo(from); }
 function stopDemo(){
   if(!play) return;
-  cancelAnimationFrame(play.raf); clearInterval(play.timer);
+  cancelAnimationFrame(play.raf); clearInterval(play.timer); metroCut();
   const b=play.bus; try{ b.gain.setTargetAtTime(0,ctx.currentTime,.03); setTimeout(()=>b.disconnect(),300);}catch(e){}
   play=null; setPlayBtn(false);
   $('#lessonMode').textContent='Learn note by note';
@@ -597,6 +775,9 @@ function setPlayBtn(on){
   const b=$('#dockRestart'); if(b) b.hidden=!on&&!paused;
 }
 $('#playBtn').onclick=playOrResume;
+$('#metroBtn').onclick=()=>setMetro(!metroOn);
+setChords(chordsOn);
+$('#chordBtn').onclick=()=>{ if(play) pauseDemo(); setChords(!chordsOn); reloadKeep(); };
 $('#dockPlay').onclick=playOrResume;
 $('#dockRestart').onclick=()=>{ resumeIdx=null; startDemo(firstNoteIndex()); };
 $('#fromHereBtn').onclick=()=>{ resumeIdx=null; startDemo(cur); };

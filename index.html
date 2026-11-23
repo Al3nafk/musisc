@@ -115,6 +115,12 @@ select.btn{padding-right:10px}
 #score svg .note-late path,#score svg path.note-late{fill:#D9A400}
 #score svg .note-bad path,#score svg path.note-bad{fill:var(--bad)}
 #score svg .hl.note-ok path,#score svg .hl.note-bad path,#score svg .hl.note-late path{fill:var(--now)}
+.btn.toggle[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.beat-dot{display:none;width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.25;transition:opacity .06s}
+#metroBtn[aria-pressed="true"] .beat-dot{display:inline-block}
+#metroBtn.tick .beat-dot{opacity:1;transform:scale(1.25)}
+#metroBtn.tick.accent .beat-dot{background:var(--now)}
+#score svg .abcjs-chord{font-weight:600}
 #micBtn.active{background:var(--bad);border-color:var(--bad);color:#fff}
 .mic-bar{margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);display:grid;gap:8px}
 .mic-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.85rem;color:var(--muted)}
@@ -314,6 +320,10 @@ select.btn{padding-right:10px}
           <label class="pedal" id="pedalLbl" for="pedalSel" title="Sustain pedal: notes keep ringing until the pedal changes">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 20h10l2-6H5z"/><path d="M12 14V4"/></svg> Pedal
             <select id="pedalSel"><option value="off">Off</option><option value="bar">On: change each bar</option><option value="half">On: change each half bar</option></select></label>
+          <button class="btn toggle" id="metroBtn" type="button" aria-pressed="false" title="Metronome: a click on every beat, with the demo or on its own">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l3.5 18h-13z"/><path d="M12 15l5-8"/><path d="M7.5 15h9"/></svg> Metronome<i class="beat-dot" aria-hidden="true"></i></button>
+          <button class="btn toggle" id="chordBtn" type="button" aria-pressed="true" title="Show chord names above the music (worked out from the notes)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6" fill="currentColor"/><circle cx="15" cy="12" r="1.6" fill="currentColor"/><circle cx="9" cy="17" r="1.6" fill="currentColor"/></svg> Chords</button>
           <button class="btn" id="micBtn" type="button" title="Play on your own piano: Musisc listens and guides you">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Practice with mic</button>
         </div>
