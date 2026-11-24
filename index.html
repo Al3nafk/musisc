@@ -83,6 +83,11 @@ header.topbar{justify-content:flex-start}
 .log-tag{font-size:.66rem;font-weight:600;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em}
 .log-tag.new{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .log-tag.improved{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.cred-list{display:grid;gap:14px;margin-top:14px}
+.cred-list section{padding-top:12px;border-top:1px solid var(--line)}
+.cred-list h3{margin:0 0 4px;font-size:.82rem;color:var(--muted);font-weight:600}
+.cred-list p{margin:0;font-size:.9rem;line-height:1.6}
+.cred-list a{color:var(--accent)}
 .log-credits{margin-top:22px;padding-top:14px;border-top:1px solid var(--line)}
 .log-credits h3{margin:0 0 6px;font-size:.82rem;color:var(--muted);font-weight:600}
 .log-credits .credit{margin:0;line-height:1.6}
@@ -456,6 +461,7 @@ select.btn{padding-right:10px}
     <button type="button" class="sb-link" data-go="chords"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6" fill="currentColor"/><circle cx="15" cy="12" r="1.6" fill="currentColor"/><circle cx="9" cy="17" r="1.6" fill="currentColor"/></svg>Chords and strumming</button>
     <div class="sb-sec">Help</div>
     <button type="button" class="sb-link" data-go="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5l-1.8-4.7L5.5 9l4.7-1.3z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>What's new<span class="sb-badge" id="logBadge" hidden>New</span></button>
+    <button type="button" class="sb-link" data-go="credits"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.9c0 5.6-7.5 10-7.5 10z"/></svg>Credits</button>
   </nav>
   <div class="sb-foot">
     <label class="sb-label" for="instSelect">Your instrument</label>
@@ -652,18 +658,34 @@ select.btn{padding-right:10px}
     <h2>What's new</h2>
     <p class="small">Every update to Musisc, newest first.</p>
     <div class="log-list" id="logList"></div>
-    <section class="log-credits"><h3>Credits</h3>
-    <p class="credit">Piano sound: Fluid R3 GM SoundFont by Frank Wen, via midi-js-soundfonts, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>. Trimmed to every third note.
-  Sheet music library: <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia Project</a> (public domain and Creative Commons), <a href="https://github.com/OpenScore/Lieder" target="_blank" rel="noopener">OpenScore Lieder</a> (CC0), <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="https://thesession.org" target="_blank" rel="noopener">The Session</a>.
-  Offline photo and PDF reading: <a href="https://github.com/liebharc/homr" target="_blank" rel="noopener">homr</a> by Christian Liebhardt and contributors (<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>, source in library/omr/homr.zip), running on Pyodide and ONNX Runtime Web.</p>
-    </section>
+  </div>
+</div>
+<div class="log-ov" id="creditsOv" hidden>
+  <div class="logbox" role="dialog" aria-label="Credits" aria-modal="true">
+    <button type="button" class="cp-close" id="creditsClose" aria-label="Close">×</button>
+    <h2>Credits</h2>
+    <p class="small">Musisc is a demo made by Alan. It stands on the work of these people and projects.</p>
+    <div class="cred-list">
+      <section><h3>Piano sound</h3>
+        <p>Fluid R3 GM SoundFont by Frank Wen, via <a href="https://github.com/gleitz/midi-js-soundfonts" target="_blank" rel="noopener">midi-js-soundfonts</a> by Benjamin Gleitzman, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>. Trimmed to every third note. The other instrument sounds are made by Musisc in your browser.</p></section>
+      <section><h3>Drawing and timing the music</h3>
+        <p><a href="https://abcjs.net" target="_blank" rel="noopener">abcjs</a> by Paul Rosen and Gregory Dyke (MIT licence).</p></section>
+      <section><h3>Sheet music library</h3>
+        <p><a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia Project</a> (public domain and Creative Commons), <a href="https://github.com/OpenScore/Lieder" target="_blank" rel="noopener">OpenScore Lieder</a> (CC0), <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> (free licences shown on each file) and <a href="https://thesession.org" target="_blank" rel="noopener">The Session</a> (tunes shared by its community).</p></section>
+      <section><h3>Offline photo and PDF reading</h3>
+        <p><a href="https://github.com/liebharc/homr" target="_blank" rel="noopener">homr</a> by Christian Liebhardt and contributors (<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>, source in library/omr/homr.zip), running on <a href="https://pyodide.org" target="_blank" rel="noopener">Pyodide</a> (MPL-2.0) and <a href="https://onnxruntime.ai" target="_blank" rel="noopener">ONNX Runtime Web</a> by Microsoft (MIT). PDFs are opened with <a href="https://mozilla.github.io/pdf.js/" target="_blank" rel="noopener">PDF.js</a> by Mozilla (Apache-2.0).</p></section>
+      <section><h3>Fonts</h3>
+        <p>Bricolage Grotesque, Inter and JetBrains Mono, from <a href="https://fonts.google.com" target="_blank" rel="noopener">Google Fonts</a> (SIL Open Font License).</p></section>
+      <section><h3>Sample songs</h3>
+        <p>Traditional and public-domain tunes, arranged for each instrument. Walking Blues in A is an exercise written for Musisc.</p></section>
+    </div>
   </div>
 </div>
 <div class="drop-overlay" id="dropOv" hidden><div>Drop your sheet music</div></div>
 
 </div>
 <script src="abcjs-basic-min.js"></script>
-<script src="app.js?v=ea8ecc889d"></script>
+<script src="app.js?v=9be446cc8c"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

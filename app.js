@@ -3085,7 +3085,7 @@ const CHANGELOG=[
   {date:'2026-11-24',items:[
     ['new','A sidebar: jump to Learn, Find music, Your songs, or Chords and strumming; your instrument and the tuner sit at the bottom. On phones it opens from the ☰ button.'],
     ['new','What\'s new: this list of every update.'],
-    ['improved','Credits for the piano sound, sheet-music libraries and offline reader now sit at the bottom of What\'s new.'],
+    ['new','Credits: a button in the sidebar lists everyone whose work Musisc uses, from the piano sound and sheet-music libraries to the offline reader and fonts.'],
     ['improved','A cleaner, simpler top of the page: one search bar and one row of buttons, with the offline options under More.'],
     ['fixed','The instrument menu could be empty on the web version after an update. Each release now loads its own matching script.'],
   ]},
@@ -3138,6 +3138,7 @@ function sidebarOpen(open){
 function goSection(where){
   const sc=$('#scroller'), to=el=>{ if(!el) return; const top=el.getBoundingClientRect().top-sc.getBoundingClientRect().top+sc.scrollTop-12; sc.scrollTo({top:Math.max(0,top),behavior:'smooth'}); };
   if(where==='log'){ openLog(); return; }
+  if(where==='credits'){ $('#creditsOv').hidden=false; return; }
   document.querySelectorAll('.sb-link').forEach(b=>b.classList.toggle('on',b.dataset.go===where));
   if(where==='learn') to($('.workspace'));
   if(where==='find'){ sc.scrollTo({top:0,behavior:'smooth'}); setTimeout(()=>$('#findIn').focus({preventScroll:true}),250); }
@@ -3150,8 +3151,10 @@ function wireSidebar(){
   $('#sbClose').onclick=()=>sidebarOpen(false);
   $('#sbBackdrop').onclick=()=>sidebarOpen(false);
   $('#logClose').onclick=closeLog;
+  $('#creditsClose').onclick=()=>{ $('#creditsOv').hidden=true; };
+  $('#creditsOv').addEventListener('click',e=>{ if(e.target.id==='creditsOv') $('#creditsOv').hidden=true; });
   $('#logOv').addEventListener('click',e=>{ if(e.target.id==='logOv') closeLog(); });
-  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeLog(); sidebarOpen(false); } });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeLog(); $('#creditsOv').hidden=true; sidebarOpen(false); } });
   $('#tunerBtn').addEventListener('click',()=>{ if(innerWidth<=900) sidebarOpen(false); });
   updateLogBadge();
 }
