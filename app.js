@@ -3088,6 +3088,7 @@ const CHANGELOG=[
     ['new','Credits: a button in the sidebar lists everyone whose work Musisc uses, from the piano sound and sheet-music libraries to the offline reader and fonts.'],
     ['improved','A cleaner, simpler top of the page: one search bar and one row of buttons, with the offline options under More.'],
     ['fixed','The instrument menu could be empty on the web version after an update. Each release now loads its own matching script.'],
+    ['fixed','On some devices the open drop-down lists were white with pale text and hard to read. They now use the app\'s own colours.'],
   ]},
   {date:'2026-11-23',items:[
     ['new','Tuner: shows your note, how many cents sharp or flat, and what to do for your instrument, with string buttons and tuning notes.'],

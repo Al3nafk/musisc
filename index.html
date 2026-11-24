@@ -113,6 +113,10 @@ header{padding-block:18px 10px;display:flex;flex-wrap:wrap;gap:12px 24px;align-i
 .watermark span{position:absolute;right:16px;bottom:10px;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.06em;white-space:nowrap;color:var(--muted);background:color-mix(in srgb,var(--panel) 70%,transparent);border:1px solid var(--line);opacity:.8}
 @media print{.watermark span{position:fixed}}
 
+/* Dropdown lists: some browsers draw the open list white even on a dark page, so give options their own colours */
+select option,select optgroup{background-color:var(--panel);color:var(--ink)}
+select optgroup{color:var(--muted);font-style:normal;font-weight:600}
+select option:checked{background-color:var(--accent);color:var(--accent-ink)}
 /* Top of the page: one header row, one card to add music */
 header.topbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;padding-block:18px 6px}
 .top-tools{display:flex;gap:8px;align-items:center}
@@ -685,7 +689,7 @@ select.btn{padding-right:10px}
 
 </div>
 <script src="abcjs-basic-min.js"></script>
-<script src="app.js?v=9be446cc8c"></script>
+<script src="app.js?v=6929a7154c"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
