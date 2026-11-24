@@ -381,6 +381,8 @@ select.btn{padding-right:10px}
 .dock.collapsed .kb-scroll{display:none}
 .dock.collapsed{padding-top:6px;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 6px)}
 .dock.collapsed .dock-head{margin-bottom:0}
+.dock.collapsed{cursor:pointer}
+.dock.collapsed:hover{background:color-mix(in srgb,var(--accent) 6%,var(--bg))}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 5px 0 8px;vertical-align:-1px}
 .sw:first-child{margin-left:0}
 .sw.r{background:var(--rh-w)} .sw.l{background:var(--lh-w)}
@@ -689,7 +691,7 @@ select.btn{padding-right:10px}
 
 </div>
 <script src="abcjs-basic-min.js"></script>
-<script src="app.js?v=6929a7154c"></script>
+<script src="app.js?v=0fa53a5d47"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

@@ -2078,6 +2078,8 @@ function setPiano(open){
   if(open) requestAnimationFrame(measureKeys);
 }
 $('#pianoBtn').onclick=()=>setPiano(!pianoOpen);
+// with the piano hidden, a click anywhere empty on the bottom bar brings it back (buttons keep their own job)
+$('.dock').addEventListener('click',e=>{ if(!pianoOpen&&!e.target.closest('button,select,a,input,label')) setPiano(true); });
 
 /* ---------- choosing the microphone (built-in or another one) ---------- */
 const BUILTIN=/built-?in|internal|integrated|array|macbook|iphone|ipad|front|back|bottom|top|speakerphone|handset|phone mic|default.*(mic|input)|realtek/i;
@@ -3088,6 +3090,7 @@ const CHANGELOG=[
     ['new','Credits: a button in the sidebar lists everyone whose work Musisc uses, from the piano sound and sheet-music libraries to the offline reader and fonts.'],
     ['improved','A cleaner, simpler top of the page: one search bar and one row of buttons, with the offline options under More.'],
     ['fixed','The instrument menu could be empty on the web version after an update. Each release now loads its own matching script.'],
+    ['improved','With the piano hidden, click anywhere on the empty bottom bar to show it again.'],
     ['fixed','On some devices the open drop-down lists were white with pale text and hard to read. They now use the app\'s own colours.'],
   ]},
   {date:'2026-11-23',items:[
