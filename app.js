@@ -3079,7 +3079,81 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 })();
 
 // your instrument: build the picker and set up the page for it
-wireChordPanel(); wireTuner(); buildInstPicker(); applyInstUI();
+/* ---------- sidebar and "What's new" ----------
+   The changelog: add an entry here with every update (newest first). Tags: new, improved, fixed. */
+const CHANGELOG=[
+  {date:'2026-11-24',items:[
+    ['new','A sidebar: jump to Learn, Find music, Your songs, or Chords and strumming; your instrument and the tuner sit at the bottom. On phones it opens from the ☰ button.'],
+    ['new','What\'s new: this list of every update.'],
+    ['improved','A cleaner, simpler top of the page: one search bar and one row of buttons, with the offline options under More.'],
+    ['fixed','The instrument menu could be empty on the web version after an update. Each release now loads its own matching script.'],
+  ]},
+  {date:'2026-11-23',items:[
+    ['new','Tuner: shows your note, how many cents sharp or flat, and what to do for your instrument, with string buttons and tuning notes.'],
+    ['new','Chords in this song: diagrams for every chord, plus Transpose, Capo (guitar and ukulele) and Simplify chords.'],
+    ['new','Strumming patterns for guitar and ukulele, with a Play button; chord backing strums the pattern.'],
+    ['new','A sample piece for each instrument; the song list shows the samples for the instrument you picked.'],
+    ['new','Click a chord to hear it and see where it is: piano keys with inversions, or a guitar chord shape.'],
+    ['new','Chord backing: the demo can play the chords along with the song.'],
+    ['new','Your instrument: 15 band instruments, each with its own sound, part, written pitch, lesson wording and guide (fretboard, valves, slide or range).'],
+    ['new','Lead sheets show their own chords; other pieces get suggested chords. Hover or tap a chord for an explanation.'],
+    ['new','Metronome, with the demo or on its own.'],
+    ['improved','Every row of the score has 4 bars.'],
+    ['fixed','Bar timing in 3/4, 6/8 and other non-4/4 pieces (it affected the pedal and would have affected the metronome).'],
+    ['fixed','An empty gap next to the score on wide screens.'],
+  ]},
+  {date:'2026-11-22',items:[
+    ['new','Bar numbers at the start of each row.'],
+    ['improved','A phone-friendly layout: bigger score, slimmer piano bar, easier buttons, no zoom when typing on iPhone.'],
+    ['fixed','No sound on iPhone after switching tabs and coming back.'],
+    ['fixed','Long songs speeding up and crashing during playback.'],
+    ['new','Sustain pedal option, now clearly audible.'],
+    ['new','Play and pause from the bottom bar, without scrolling.'],
+    ['new','Demo watermark in the corner.'],
+  ]},
+  {date:'2026-11-21',items:[
+    ['new','Practice with mic: Musisc listens while you play and guides you note by note, in "wait for me" or "play along" mode.'],
+    ['new','Choose your microphone, including built-in, phone and iPad mics.'],
+    ['new','Upload several files at once.'],
+    ['new','Read photos and PDFs offline, right on your device.'],
+    ['new','Search sheet music online by name: Mutopia, OpenScore, Wikimedia Commons and The Session, about 30,000 free pieces.'],
+    ['fixed','No sound on some Apple devices.'],
+  ]},
+];
+function renderLog(){
+  const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
+  $('#logList').innerHTML=CHANGELOG.map(day=>`<section class="log-day"><h3>${esc(fmt(day.date))}</h3><ul>${day.items.map(([t,x])=>`<li><span class="log-tag ${t}">${t}</span><span>${esc(x)}</span></li>`).join('')}</ul></section>`).join('');
+}
+function logSeen(){ try{ return localStorage.getItem('smc.logSeen')||''; }catch(e){ return ''; } }
+function updateLogBadge(){ $('#logBadge').hidden=logSeen()===CHANGELOG[0].date; }
+function openLog(){ renderLog(); $('#logOv').hidden=false; try{ localStorage.setItem('smc.logSeen',CHANGELOG[0].date); }catch(e){} updateLogBadge(); }
+function closeLog(){ $('#logOv').hidden=true; }
+function sidebarOpen(open){
+  $('#sidebar').classList.toggle('open',open); $('#sbBackdrop').hidden=!open;
+  $('#sbOpen').setAttribute('aria-expanded',String(open));
+}
+function goSection(where){
+  const sc=$('#scroller'), to=el=>{ if(!el) return; const top=el.getBoundingClientRect().top-sc.getBoundingClientRect().top+sc.scrollTop-12; sc.scrollTo({top:Math.max(0,top),behavior:'smooth'}); };
+  if(where==='log'){ openLog(); return; }
+  document.querySelectorAll('.sb-link').forEach(b=>b.classList.toggle('on',b.dataset.go===where));
+  if(where==='learn') to($('.workspace'));
+  if(where==='find'){ sc.scrollTo({top:0,behavior:'smooth'}); setTimeout(()=>$('#findIn').focus({preventScroll:true}),250); }
+  if(where==='songs'){ sc.scrollTo({top:0,behavior:'smooth'}); setTimeout(()=>{ const s=$('#songSel'); s.focus({preventScroll:true}); try{ s.showPicker&&s.showPicker(); }catch(e){} },300); }
+  if(where==='chords') to($('#chordsPanel'));
+}
+function wireSidebar(){
+  $('.sb-nav').onclick=e=>{ const b=e.target.closest('[data-go]'); if(!b) return; goSection(b.dataset.go); if(innerWidth<=900) sidebarOpen(false); };
+  $('#sbOpen').onclick=()=>sidebarOpen(true);
+  $('#sbClose').onclick=()=>sidebarOpen(false);
+  $('#sbBackdrop').onclick=()=>sidebarOpen(false);
+  $('#logClose').onclick=closeLog;
+  $('#logOv').addEventListener('click',e=>{ if(e.target.id==='logOv') closeLog(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeLog(); sidebarOpen(false); } });
+  $('#tunerBtn').addEventListener('click',()=>{ if(innerWidth<=900) sidebarOpen(false); });
+  updateLogBadge();
+}
+
+wireChordPanel(); wireTuner(); wireSidebar(); buildInstPicker(); applyInstUI();
 // the More menu closes after a choice or a click anywhere else
 document.addEventListener('click',e=>{ const m=$('#moreMenu'); if(m&&m.open&&(!m.contains(e.target)||e.target.closest('.more-pop .btn'))) setTimeout(()=>m.open=false,0); });
 $('#instSample').onclick=e=>{ const k=e.currentTarget.dataset.k; if(!k) return; try{ loadAbc(SAMPLES[k]); currentSong='s:'+k; fillSongs(); showView('score'); setStatus(''); }catch(err){ setStatus(esc(err.message),'err'); } };

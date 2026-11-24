@@ -39,7 +39,51 @@
 /* one-screen app: content scrolls above, piano stays pinned below it */
 html,body{height:100%}
 body{overflow:hidden}
-#app{height:100%;display:flex;flex-direction:column}
+#app{height:100%;display:flex;flex-direction:row}
+.main-col{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+/* Sidebar: links on top, your instrument and the tuner at the bottom */
+.sidebar{width:232px;flex:none;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);padding:14px 10px calc(env(safe-area-inset-bottom,0px) + 12px);overflow-y:auto}
+.sb-brand{display:flex;align-items:center;gap:8px;padding:4px 10px 16px;color:var(--accent)}
+.sb-brand span{font-family:var(--f-display);font-weight:700;font-size:1.25rem;color:var(--ink)}
+.sb-close{display:none;margin-left:auto;border:0;background:none;color:var(--muted);font-size:1.5rem;line-height:1;padding:2px 6px;cursor:pointer}
+.sb-nav{display:grid;gap:2px}
+.sb-link{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:.92rem;font-weight:500;text-align:left;cursor:pointer}
+.sb-link svg{width:18px;height:18px;flex:none}
+.sb-link:hover{background:var(--bg);color:var(--ink)}
+.sb-link.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.sb-sec{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:16px 10px 4px}
+.sb-badge{margin-left:auto;font-size:.66rem;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--accent);color:var(--accent-ink)}
+.sb-foot{margin-top:auto;border-top:1px solid var(--line);padding:14px 4px 0;display:grid;gap:8px}
+.sb-label{font-size:.72rem;color:var(--muted);padding-left:2px}
+.sb-foot .inst-pick{width:100%;box-sizing:border-box}
+.sb-foot .inst-pick select{width:100%;max-width:none}
+.sb-foot .btn{justify-content:center;height:40px}
+.btn.sb-open{display:none;padding:8px;flex:none}
+.sb-open svg{width:20px;height:20px}
+header.topbar{justify-content:flex-start}
+.sb-backdrop{position:fixed;inset:0;z-index:94;background:rgb(0 0 0/.45)}
+.sb-backdrop[hidden]{display:none}
+@media (max-width:900px){
+  .sidebar{position:fixed;top:0;bottom:0;left:0;z-index:95;width:min(280px,84vw);transform:translateX(-105%);transition:transform .2s ease;box-shadow:0 0 30px rgb(0 0 0/.4);padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
+  .sidebar.open{transform:none}
+  .sb-close{display:block}
+  .btn.sb-open{display:inline-flex}
+  header.topbar{justify-content:flex-start;flex-wrap:nowrap}
+}
+@media (prefers-reduced-motion:reduce){.sidebar{transition:none}}
+/* What's new */
+.log-ov{position:fixed;inset:0;z-index:90;background:rgb(0 0 0/.45);display:grid;place-items:center;padding:16px}
+.log-ov[hidden]{display:none}
+.logbox{position:relative;width:min(560px,100%);max-height:min(80vh,720px);overflow-y:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:20px 22px;box-shadow:0 16px 40px rgb(0 0 0/.35)}
+.logbox h2{margin:0;font-size:1.3rem}
+.logbox > .small{margin:2px 0 8px}
+.log-day h3{margin:18px 0 6px;font-size:.82rem;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.log-day ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.log-day li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:baseline;font-size:.9rem;line-height:1.45}
+.log-tag{font-size:.66rem;font-weight:600;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em}
+.log-tag.new{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.log-tag.improved{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.log-tag.fixed{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
 .scroller{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;margin:0}
 .wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1320px;margin:0 auto}
@@ -231,7 +275,7 @@ select.btn{padding-right:10px}
 @media (max-width:640px){ #tunA4{font-size:16px} .tun-note{font-size:3.4rem} }
 .chord-pop{position:fixed;z-index:85;padding:12px 14px 14px;border-radius:12px;background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 10px 30px rgb(0 0 0/.32);display:grid;gap:8px;justify-items:center;font-size:.85rem;line-height:1.45}
 .chord-pop[hidden]{display:none}
-.chord-pop .cp-close,.tuner .cp-close{position:absolute;top:6px;right:8px;border:0;background:none;font-size:1.3rem;line-height:1;color:var(--muted);padding:4px 6px;cursor:pointer}
+.chord-pop .cp-close,.tuner .cp-close,.logbox .cp-close{position:absolute;top:6px;right:8px;border:0;background:none;font-size:1.3rem;line-height:1;color:var(--muted);padding:4px 6px;cursor:pointer}
 .chord-pop .cp-name{font-family:var(--f-display);font-size:1.4rem;font-weight:700;color:var(--accent)}
 .chord-pop .cp-diagram{max-width:100%;overflow-x:auto;background:var(--bg);border-radius:8px;padding:8px}
 .chord-pop .cp-diagram svg{display:block;max-width:100%;height:auto}
@@ -392,18 +436,37 @@ select.btn{padding-right:10px}
 </style>
 
 <div id="app">
+<aside class="sidebar" id="sidebar" aria-label="Musisc menu">
+  <div class="sb-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+    <span>Musisc</span>
+    <button type="button" class="sb-close" id="sbClose" aria-label="Close menu">×</button>
+  </div>
+  <nav class="sb-nav">
+    <button type="button" class="sb-link on" data-go="learn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l9-5 9 5-9 5z"/><path d="M7 12v4c0 1.5 2.5 3 5 3s5-1.5 5-3v-4"/></svg>Learn</button>
+    <button type="button" class="sb-link" data-go="find"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Find music</button>
+    <button type="button" class="sb-link" data-go="songs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><circle cx="18" cy="17" r="2.5"/><path d="M20.5 17V8"/></svg>Your songs</button>
+    <button type="button" class="sb-link" data-go="chords"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="1.6" fill="currentColor"/><circle cx="15" cy="12" r="1.6" fill="currentColor"/><circle cx="9" cy="17" r="1.6" fill="currentColor"/></svg>Chords and strumming</button>
+    <div class="sb-sec">Help</div>
+    <button type="button" class="sb-link" data-go="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5l-1.8-4.7L5.5 9l4.7-1.3z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>What's new<span class="sb-badge" id="logBadge" hidden>New</span></button>
+  </nav>
+  <div class="sb-foot">
+    <label class="sb-label" for="instSelect">Your instrument</label>
+    <label class="inst-pick" title="Your instrument: changes the sound, the part you learn and the guide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+      <select id="instSelect" aria-label="Your instrument"></select>
+    </label>
+    <button type="button" class="btn" id="tunerBtn" title="Tune your instrument with the microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-7"/></svg> Tuner</button>
+  </div>
+</aside>
+<div class="sb-backdrop" id="sbBackdrop" hidden></div>
+<div class="main-col">
 <div class="scroller" id="scroller"><div class="wrap">
   <header class="topbar">
+    <button type="button" class="btn sb-open" id="sbOpen" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div class="brand">
       <h1>Musisc <span class="demo-tag">Demo · Made by Alan</span></h1>
       <p>Bring a score. Learn every note. Hear the whole song.</p>
-    </div>
-    <div class="top-tools">
-      <label class="inst-pick" for="instSelect" title="Your instrument: changes the sound, the part you learn and the guide">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
-        <select id="instSelect" aria-label="Your instrument"></select>
-      </label>
-      <button type="button" class="btn" id="tunerBtn" title="Tune your instrument with the microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-7"/></svg> Tuner</button>
     </div>
   </header>
   <p class="inst-note" id="instNote"></p>
@@ -562,6 +625,7 @@ select.btn{padding-right:10px}
     <div class="inst-view" id="instView" hidden aria-live="polite"></div>
   </div>
 </div>
+</div>
 <div class="tuner-ov" id="tunerOv" hidden>
   <div class="tuner" role="dialog" aria-label="Tuner" aria-modal="true">
     <button type="button" class="cp-close" id="tunClose" aria-label="Close tuner">×</button>
@@ -578,11 +642,19 @@ select.btn{padding-right:10px}
       <label for="tunA4">A4 = <select id="tunA4"><option>432</option><option>435</option><option>438</option><option>439</option><option selected>440</option><option>441</option><option>442</option><option>443</option><option>444</option><option>446</option></select> Hz</label></div>
   </div>
 </div>
+<div class="log-ov" id="logOv" hidden>
+  <div class="logbox" role="dialog" aria-label="What's new" aria-modal="true">
+    <button type="button" class="cp-close" id="logClose" aria-label="Close">×</button>
+    <h2>What's new</h2>
+    <p class="small">Every update to Musisc, newest first.</p>
+    <div class="log-list" id="logList"></div>
+  </div>
+</div>
 <div class="drop-overlay" id="dropOv" hidden><div>Drop your sheet music</div></div>
 
 </div>
 <script src="abcjs-basic-min.js"></script>
-<script src="app.js?v=1205b4c745"></script>
+<script src="app.js?v=a17abf58c3"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
