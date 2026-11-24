@@ -83,6 +83,9 @@ header.topbar{justify-content:flex-start}
 .log-tag{font-size:.66rem;font-weight:600;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em}
 .log-tag.new{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .log-tag.improved{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.log-credits{margin-top:22px;padding-top:14px;border-top:1px solid var(--line)}
+.log-credits h3{margin:0 0 6px;font-size:.82rem;color:var(--muted);font-weight:600}
+.log-credits .credit{margin:0;line-height:1.6}
 .log-tag.launch{background:var(--now);color:#1b1300;white-space:nowrap}
 .log-day li.log-launch{margin-top:6px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--now) 45%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--now) 8%,transparent)}
 .log-day .log-sub{list-style:disc;margin:6px 0 0;padding-left:18px;display:grid;gap:3px;font-size:.86rem;color:var(--muted)}
@@ -612,9 +615,6 @@ select.btn{padding-right:10px}
       </div>
     </aside>
   </main>
-  <p class="credit">Piano sound: Fluid R3 GM SoundFont by Frank Wen, via midi-js-soundfonts, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>. Trimmed to every third note.
-  Sheet music library: <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia Project</a> (public domain and Creative Commons), <a href="https://github.com/OpenScore/Lieder" target="_blank" rel="noopener">OpenScore Lieder</a> (CC0), <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="https://thesession.org" target="_blank" rel="noopener">The Session</a>.
-  Offline photo and PDF reading: <a href="https://github.com/liebharc/homr" target="_blank" rel="noopener">homr</a> by Christian Liebhardt and contributors (<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>, source in library/omr/homr.zip), running on Pyodide and ONNX Runtime Web.</p>
 </div></div>
 
 <div class="watermark" aria-hidden="true"><span>DEMO · Made by Alan</span></div>
@@ -652,6 +652,11 @@ select.btn{padding-right:10px}
     <h2>What's new</h2>
     <p class="small">Every update to Musisc, newest first.</p>
     <div class="log-list" id="logList"></div>
+    <section class="log-credits"><h3>Credits</h3>
+    <p class="credit">Piano sound: Fluid R3 GM SoundFont by Frank Wen, via midi-js-soundfonts, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>. Trimmed to every third note.
+  Sheet music library: <a href="https://www.mutopiaproject.org" target="_blank" rel="noopener">Mutopia Project</a> (public domain and Creative Commons), <a href="https://github.com/OpenScore/Lieder" target="_blank" rel="noopener">OpenScore Lieder</a> (CC0), <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a> and <a href="https://thesession.org" target="_blank" rel="noopener">The Session</a>.
+  Offline photo and PDF reading: <a href="https://github.com/liebharc/homr" target="_blank" rel="noopener">homr</a> by Christian Liebhardt and contributors (<a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0</a>, source in library/omr/homr.zip), running on Pyodide and ONNX Runtime Web.</p>
+    </section>
   </div>
 </div>
 <div class="drop-overlay" id="dropOv" hidden><div>Drop your sheet music</div></div>
