@@ -3033,7 +3033,7 @@ async function importLocal(make, label){
 async function exportOffline(){
   const btn=$('#offlineBtn'); btn.disabled=true;
   try{
-    const [lib,app,piano]=await Promise.all(['abcjs-basic-min.js','app.js','piano.json'].map(f=>fetch(f).then(r=>{ if(!r.ok) throw new Error(f); return r.text(); })));
+    const [lib,app,piano]=await Promise.all(['abcjs-basic-min.js','app.js','piano.json'].map(f=>fetch(f,{cache:'no-cache'}).then(r=>{ if(!r.ok) throw new Error(f); return r.text(); })));
     const css=$('#smc-css').textContent, safe=t=>t.replace(/<\/script/gi,'<\\/script');
     const html='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Musisc (offline)</title><style>'+css+'</style></head><body>'
       +APP_HTML+'<script>'+safe(lib)+'</'+'script><script>window.SMC_OFFLINE='+safe(JSON.stringify(songs()))+';window.SMC_PIANO='+piano+';</'+'script><script>'+safe(app)+'</'+'script></body></html>';
