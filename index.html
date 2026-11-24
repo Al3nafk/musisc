@@ -83,6 +83,10 @@ header.topbar{justify-content:flex-start}
 .log-tag{font-size:.66rem;font-weight:600;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em}
 .log-tag.new{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .log-tag.improved{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.log-tag.launch{background:var(--now);color:#1b1300;white-space:nowrap}
+.log-day li.log-launch{margin-top:6px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--now) 45%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--now) 8%,transparent)}
+.log-day .log-sub{list-style:disc;margin:6px 0 0;padding-left:18px;display:grid;gap:3px;font-size:.86rem;color:var(--muted)}
+.log-day .log-sub li{display:list-item}
 .log-tag.fixed{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
 .scroller{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;margin:0}
@@ -654,7 +658,7 @@ select.btn{padding-right:10px}
 
 </div>
 <script src="abcjs-basic-min.js"></script>
-<script src="app.js?v=a17abf58c3"></script>
+<script src="app.js?v=4b749ae27b"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

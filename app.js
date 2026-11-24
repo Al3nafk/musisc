@@ -3110,19 +3110,19 @@ const CHANGELOG=[
     ['new','Sustain pedal option, now clearly audible.'],
     ['new','Play and pause from the bottom bar, without scrolling.'],
     ['new','Demo watermark in the corner.'],
-  ]},
-  {date:'2026-11-21',items:[
-    ['new','Practice with mic: Musisc listens while you play and guides you note by note, in "wait for me" or "play along" mode.'],
-    ['new','Choose your microphone, including built-in, phone and iPad mics.'],
-    ['new','Upload several files at once.'],
-    ['new','Read photos and PDFs offline, right on your device.'],
-    ['new','Search sheet music online by name: Mutopia, OpenScore, Wikimedia Commons and The Session, about 30,000 free pieces.'],
-    ['fixed','No sound on some Apple devices.'],
+    ['launch','First launch of Musisc. Bring a score and learn it note by note, hear the whole song, and follow along on the piano. It launched with:',[
+      'Practice with mic: Musisc listens while you play and guides you, in "wait for me" or "play along" mode',
+      'Your choice of microphone, including built-in, phone and iPad mics',
+      'Several files uploaded at once',
+      'Photos and PDFs read offline, right on your device',
+      'Online search by name across Mutopia, OpenScore, Wikimedia Commons and The Session: about 30,000 free pieces',
+      'Sound that works on Apple devices too',
+    ]],
   ]},
 ];
 function renderLog(){
   const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
-  $('#logList').innerHTML=CHANGELOG.map(day=>`<section class="log-day"><h3>${esc(fmt(day.date))}</h3><ul>${day.items.map(([t,x])=>`<li><span class="log-tag ${t}">${t}</span><span>${esc(x)}</span></li>`).join('')}</ul></section>`).join('');
+  $('#logList').innerHTML=CHANGELOG.map(day=>`<section class="log-day"><h3>${esc(fmt(day.date))}</h3><ul>${day.items.map(([t,x,sub])=>`<li class="${t==='launch'?'log-launch':''}"><span class="log-tag ${t}">${t==='launch'?'first launch':t}</span><span>${esc(x)}${sub?'<ul class="log-sub">'+sub.map(y=>'<li>'+esc(y)+'</li>').join('')+'</ul>':''}</span></li>`).join('')}</ul></section>`).join('');
 }
 function logSeen(){ try{ return localStorage.getItem('smc.logSeen')||''; }catch(e){ return ''; } }
 function updateLogBadge(){ $('#logBadge').hidden=logSeen()===CHANGELOG[0].date; }
