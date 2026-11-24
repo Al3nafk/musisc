@@ -3085,6 +3085,7 @@ const CHANGELOG=[
   {date:'2026-11-24',items:[
     ['new','A sidebar: jump to Learn, Find music, Your songs, or Chords and strumming; your instrument and the tuner sit at the bottom. On phones it opens from the ☰ button.'],
     ['new','What\'s new: this list of every update.'],
+    ['improved','Credits for the piano sound, sheet-music libraries and offline reader now sit at the bottom of What\'s new.'],
     ['improved','A cleaner, simpler top of the page: one search bar and one row of buttons, with the offline options under More.'],
     ['fixed','The instrument menu could be empty on the web version after an update. Each release now loads its own matching script.'],
   ]},
