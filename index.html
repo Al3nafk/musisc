@@ -57,6 +57,53 @@ header{padding-block:18px 10px;display:flex;flex-wrap:wrap;gap:12px 24px;align-i
 .watermark span{position:absolute;right:16px;bottom:10px;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.06em;white-space:nowrap;color:var(--muted);background:color-mix(in srgb,var(--panel) 70%,transparent);border:1px solid var(--line);opacity:.8}
 @media print{.watermark span{position:fixed}}
 
+/* Top of the page: one header row, one card to add music */
+header.topbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;padding-block:18px 6px}
+.top-tools{display:flex;gap:8px;align-items:center}
+.top-tools .btn{height:40px}
+.inst-pick{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 6px 0 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--accent);cursor:pointer}
+.inst-pick:hover,.inst-pick:focus-within{border-color:var(--accent)}
+.inst-pick select{border:0;background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:6px 2px;cursor:pointer;max-width:220px}
+.inst-pick select:focus{outline:none}
+.inst-note{margin:0 0 12px;font-size:.84rem;color:var(--muted)}
+.inst-note:empty{display:none}
+header.topbar{margin-bottom:6px}
+.addcard{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:14px;display:grid;gap:12px}
+.addcard .find{border:0;padding:0;margin:0;background:none}
+.addcard .find form{display:flex;gap:8px;flex-wrap:nowrap}
+.find-box{position:relative;flex:1;min-width:0;display:flex}
+.find-box svg{position:absolute;left:13px;top:50%;width:18px;height:18px;margin-top:-9px;color:var(--muted);pointer-events:none}
+.addcard .find input{flex:1;width:100%;padding:11px 14px 11px 40px;font-size:1rem;border-radius:10px}
+.addcard #findBtn{padding:0 20px;border-radius:10px}
+.add-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.add-row .btn{padding:7px 12px;font-size:.9rem;border-radius:9px}
+.add-row .btn svg{width:16px;height:16px}
+.add-sep{width:1px;height:22px;background:var(--line);margin:0 2px}
+#songSel{max-width:240px}
+.more{position:relative}
+.more summary{list-style:none;cursor:pointer;gap:4px}
+.more summary::-webkit-details-marker{display:none}
+.more[open] summary{border-color:var(--accent)}
+.more-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:230px;padding:6px;display:grid;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgb(0 0 0/.28)}
+.more-pop .btn{border:0;justify-content:flex-start;width:100%;background:transparent}
+.more-pop .btn:hover{background:var(--bg)}
+.addcard .hint,.addcard .foot{margin:0;font-size:.8rem;color:var(--muted);line-height:1.5}
+.addcard .foot:empty{display:none}
+.addcard .find .results{margin-top:12px}
+@media (max-width:640px){
+  header.topbar{padding-block:12px 4px}
+  .topbar .brand p{display:none}
+  .top-tools{width:100%}
+  .inst-pick{flex:1;min-width:0}
+  .inst-pick select{max-width:none;width:100%;font-size:16px}
+  .addcard{padding:10px;gap:10px}
+  .add-row>.btn,.add-row>label.btn{flex:1 1 28%;justify-content:center}
+  .add-sep{display:none}
+  #songSel{flex:1 1 100%;max-width:none;font-size:16px}
+  #instSample{flex:1 1 auto;justify-content:center}
+  .more{flex:0 0 auto}
+  .addcard .hint{display:none}
+}
 /* Your instrument */
 .inst{margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--panel);display:grid;gap:8px}
 .inst-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline}
@@ -346,48 +393,56 @@ select.btn{padding-right:10px}
 
 <div id="app">
 <div class="scroller" id="scroller"><div class="wrap">
-  <header>
+  <header class="topbar">
     <div class="brand">
       <h1>Musisc <span class="demo-tag">Demo · Made by Alan</span></h1>
       <p>Bring a score. Learn every note. Hear the whole song.</p>
     </div>
+    <div class="top-tools">
+      <label class="inst-pick" for="instSelect" title="Your instrument: changes the sound, the part you learn and the guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+        <select id="instSelect" aria-label="Your instrument"></select>
+      </label>
+      <button type="button" class="btn" id="tunerBtn" title="Tune your instrument with the microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-7"/></svg> Tuner</button>
+    </div>
   </header>
+  <p class="inst-note" id="instNote"></p>
 
-  <section class="inst" id="instSec" aria-label="Your instrument">
-    <div class="inst-head"><b>Your instrument</b><span class="small" id="instNote"></span><button type="button" class="btn mini" id="instSample" hidden></button><button type="button" class="btn mini" id="tunerBtn" title="Tune your instrument with the microphone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="13" height="13"><path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4-7"/></svg> Tuner</button></div>
-    <div class="inst-list" id="instList"></div>
-  </section>
-  <section class="intake" id="intake" aria-label="Add sheet music">
-    <label class="btn primary" for="fileIn">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
-      Upload file
-    </label>
-    <input id="fileIn" class="sr" type="file" multiple accept="image/*,application/pdf,.pdf,.abc,.txt,.xml,.musicxml,.mxl,.mid,.midi,audio/midi">
-    <label class="btn" for="camIn">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>
-      Take photo
-    </label>
-    <input id="camIn" class="sr" type="file" accept="image/*" capture="environment">
-    <button class="btn" id="pasteBtn" type="button">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg>
-      Paste
-    </button>
-    <select class="btn" id="songSel" aria-label="Open a song"></select>
-    <button class="btn" id="offlineBtn" type="button" title="Save one HTML file with your songs that works without internet">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
-      Offline copy
-    </button>
-    <button class="btn" id="omrBtn" type="button" hidden>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M8 20h8M12 16v4"/><path d="M9 9l2 2 4-4"/></svg> Offline reading</button>
-    <div class="hint" id="intakeHint">Drop a photo, screenshot or PDF of sheet music anywhere on this page, or press Ctrl+V to paste one. MusicXML and MIDI files open instantly, even offline.</div>
-  </section>
-  <section class="find" id="find" aria-label="Search sheet music online">
-    <form id="findForm" role="search">
-      <input id="findIn" type="search" placeholder="Search sheet music by name, e.g. Star of the County Down" aria-label="Song name" autocomplete="off">
-      <button class="btn primary" type="submit" id="findBtn">Search online</button>
-    </form>
-    <div class="results" id="findResults"></div>
-    <div class="foot small" id="findFoot"></div>
+  <section class="addcard" id="intake" aria-label="Add sheet music">
+    <div class="find" id="find">
+      <form id="findForm" role="search">
+        <span class="find-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input id="findIn" type="search" placeholder="Search sheet music, e.g. Star of the County Down" aria-label="Song name" autocomplete="off">
+        </span>
+        <button class="btn primary" type="submit" id="findBtn">Search</button>
+      </form>
+      <div class="results" id="findResults"></div>
+    </div>
+    <div class="add-row">
+      <label class="btn" for="fileIn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg> Upload</label>
+      <input id="fileIn" class="sr" type="file" multiple accept="image/*,application/pdf,.pdf,.abc,.txt,.xml,.musicxml,.mxl,.mid,.midi,audio/midi">
+      <label class="btn" for="camIn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg> Photo</label>
+      <input id="camIn" class="sr" type="file" accept="image/*" capture="environment">
+      <button class="btn" id="pasteBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg> Paste</button>
+      <span class="add-sep" aria-hidden="true"></span>
+      <select class="btn" id="songSel" aria-label="Open a song"></select>
+      <button type="button" class="btn" id="instSample" hidden></button>
+      <details class="more" id="moreMenu">
+        <summary class="btn" aria-label="More options">More <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="14" height="14"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="more-pop">
+          <button class="btn" id="offlineBtn" type="button" title="Save one HTML file with your songs that works without internet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 19h16"/></svg> Offline copy</button>
+          <button class="btn" id="omrBtn" type="button" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H4z"/><path d="M8 20h8M12 16v4"/><path d="M9 9l2 2 4-4"/></svg> Offline reading</button>
+        </div>
+      </details>
+    </div>
+    <p class="hint" id="intakeHint">Tip: drop a photo, PDF, MusicXML or MIDI file anywhere on the page, or press Ctrl+V to paste one.</p>
+    <p class="foot small" id="findFoot"></p>
   </section>
   <div id="status" class="status" hidden></div>
 

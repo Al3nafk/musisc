@@ -484,17 +484,18 @@ function applyPart(evs){ // keeps only your part as the notes to learn; the rest
 }
 
 // ---- picker ----
-function buildInstPicker(){
-  const box=$('#instList'); if(!box) return;
+function buildInstPicker(){ // one compact dropdown in the header, grouped like a band
+  const sel=$('#instSelect'); if(!sel) return;
   const groups=[...new Set(INSTRUMENTS.map(i=>i.group))];
-  box.innerHTML=groups.map(g=>`<div class="inst-group"><span class="inst-g">${g}</span>${INSTRUMENTS.filter(i=>i.group===g).map(i=>`<button type="button" class="btn mini toggle" data-inst="${i.id}" aria-pressed="${i===INST}">${esc(i.name)}</button>`).join('')}</div>`).join('');
-  box.onclick=e=>{ const b=e.target.closest('[data-inst]'); if(b) setInstrument(b.dataset.inst); };
+  sel.innerHTML=groups.map(g=>`<optgroup label="${g}">${INSTRUMENTS.filter(i=>i.group===g).map(i=>`<option value="${i.id}">${esc(i.name)}</option>`).join('')}</optgroup>`).join('');
+  sel.value=INST.id;
+  sel.onchange=()=>setInstrument(sel.value);
 }
 function setInstrument(id,noReload){
   const next=INSTRUMENTS.find(i=>i.id===id)||INSTRUMENTS[0];
-  if(next===INST&&$('#instList [aria-pressed="true"]')) return;
+  if(next===INST) return;
   INST=next; try{ localStorage.setItem('smc.instrument',INST.id); }catch(e){}
-  document.querySelectorAll('#instList [data-inst]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.inst===INST.id)));
+  if($('#instSelect')) $('#instSelect').value=INST.id;
   applyInstUI();
   if(play) stopDemo(); if(MIC.on) micStop();
   if(vis&&!noReload) reloadKeep();
@@ -504,9 +505,9 @@ function applyInstUI(){
   if(typeof fillSongs==='function'&&$('#songSel')) fillSongs();
   const piano=INST.view==='piano';
   const part=INST.part==='both'?'You play every note of the score.':INST.part==='bass'?'You play the bass line; the rest plays softly as backing.':'You play the melody (the top line); the rest plays softly as backing.';
-  $('#instNote').textContent=part+(INST.note?' '+INST.note:'');
+  $('#instNote').textContent=INST.id==='piano'?'':INST.name+': '+part+(INST.note?' '+INST.note:'');
   const sk=Object.keys(SAMPLE_FOR).filter(k=>SAMPLE_FOR[k]===INST.id), sb=$('#instSample');
-  if(sb){ const k=INST.id==='piano'?'ode2':sk[0]; sb.hidden=!k; if(k){ sb.dataset.k=k; sb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M7 4v16l13-8z"/></svg> Try a sample: '+esc(SAMPLE_NAMES[k]); } }
+  if(sb){ const k=INST.id==='piano'?'ode2':sk[0]; sb.hidden=!k; if(k){ sb.dataset.k=k; sb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg> '+esc(SAMPLE_NAMES[k]); sb.title='Open the '+INST.name+' sample: '+SAMPLE_NAMES[k]; } }
   $('#kbScroll').hidden=!piano;
   $('#instView').hidden=piano;
   $('#rollBtn').style.display=piano?'':'none';
@@ -3065,7 +3066,7 @@ fillSongs();
 requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 (async()=>{
   if(OFFLINE||!(window.claude&&window.claude.use)){
-    if(OMR_HERE){ $('#intakeHint').textContent='Drop a photo, screenshot or PDF of sheet music anywhere on this page, or press Ctrl+V. It is read on this device, even offline. MusicXML and MIDI files open instantly.'; updateOmrBtn(); return; }
+    if(OMR_HERE){ $('#intakeHint').textContent='Tip: drop a photo, PDF, MusicXML or MIDI file anywhere on the page, or press Ctrl+V. Photos are read on this device, even offline.'; updateOmrBtn(); return; }
     if(!OFFLINE) $('#intakeHint').innerHTML='To read photos and PDFs, use the <a href="https://claude.ai/artifact/LdkHDji7A11UdAEjTqhjWy" target="_blank" rel="noopener">claude.ai version</a>. Here you can open your saved songs, the samples, and MusicXML, MIDI or ABC files, even offline.';
     return;
   }
@@ -3079,4 +3080,6 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 
 // your instrument: build the picker and set up the page for it
 wireChordPanel(); wireTuner(); buildInstPicker(); applyInstUI();
+// the More menu closes after a choice or a click anywhere else
+document.addEventListener('click',e=>{ const m=$('#moreMenu'); if(m&&m.open&&(!m.contains(e.target)||e.target.closest('.more-pop .btn'))) setTimeout(()=>m.open=false,0); });
 $('#instSample').onclick=e=>{ const k=e.currentTarget.dataset.k; if(!k) return; try{ loadAbc(SAMPLES[k]); currentSong='s:'+k; fillSongs(); showView('score'); setStatus(''); }catch(err){ setStatus(esc(err.message),'err'); } };
