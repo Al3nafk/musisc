@@ -472,8 +472,41 @@ function withInstClef(src,v){
   out=out.replace(/^(V:[^\n%]*)/gm,(m)=>set(m.replace(/\s+$/,'')));
   return out;
 }
+/* Hands (piano and keyboard): play and learn both staves, only the treble clef (right hand) or only the
+   bass clef (left hand). The other hand is left out of the demo, the lesson and mic practice. */
+let handMode=(()=>{ try{ return localStorage.getItem('smc.hands')||'both'; }catch(e){ return 'both'; } })();
+function hasBothClefs(){ return clefs.includes('treble')&&clefs.includes('bass'); }
+function handsActive(){ return INST.part==='both'&&handMode!=='both'&&hasBothClefs(); }
+// tells every note which staff (treble or bass) it is written on
+function tagClefs(v,evs){
+  const map={};
+  v.lines.forEach(l=>l.staff&&l.staff.forEach(st=>{ const clef=/bass/.test((st.clef&&st.clef.type)||'')?'bass':'treble';
+    (st.voices||[]).forEach(vo=>vo.forEach(el=>{ if(el.el_type==='note'&&el.startChar!=null) map[el.startChar]={clef, midis:(el.midiPitches||[]).map(m=>m.pitch)}; })); }));
+  evs.forEach(ev=>{
+    const left=ev.startChars.map(sc=>map[sc]).filter(Boolean).map(x=>({clef:x.clef, midis:x.midis.slice()}));
+    ev.pitches.forEach(p=>{ const m=p.midi-transposeSemis, hit=left.find(x=>x.midis.includes(m));
+      if(hit){ p.clef=hit.clef; hit.midis.splice(hit.midis.indexOf(m),1); } else p.clef=p.midi>=60?'treble':'bass'; });
+  });
+}
+function dimOtherHand(v){ // fades the staff you are not playing
+  document.querySelectorAll('#score .dim-hand').forEach(e=>e.classList.remove('dim-hand'));
+  if(!handsActive()) return;
+  const line=v.lines.find(l=>l.staff); let g=0; const fade=[];
+  line.staff.forEach(st=>{ const clef=/bass/.test((st.clef&&st.clef.type)||'')?'bass':'treble'; (st.voices||[]).forEach(()=>{ if(clef!==handMode) fade.push(g); g++; }); });
+  fade.forEach(i=>document.querySelectorAll('#score .abcjs-v'+i).forEach(e=>e.classList.add('dim-hand')));
+}
+function updateHandsUI(){
+  const lbl=$('#handsLbl'); if(!lbl) return;
+  lbl.hidden=!(INST.part==='both'&&hasBothClefs());
+  $('#handsSel').value=handMode;
+  lbl.classList.toggle('on',handsActive());
+}
 function applyPart(evs){ // keeps only your part as the notes to learn; the rest becomes backing
-  if(INST.part==='both'){ evs.forEach(ev=>{ ev.accomp=[]; }); return; }
+  if(INST.part==='both'){
+    if(handsActive()) evs.forEach(ev=>{ const all=ev.pitches; ev.pitches=all.filter(p=>p.clef===handMode); ev.accomp=[]; ev.backingOnly=!ev.pitches.length&&all.length>0; });
+    else evs.forEach(ev=>{ ev.accomp=[]; });
+    return;
+  }
   const mv=maxVoice(evs);
   evs.forEach(ev=>{
     const p=pickPart(ev,mv), all=ev.pitches;
@@ -516,6 +549,7 @@ function applyInstUI(){
   const pc=$('#practice'); if(pc) pc.closest('label').hidden=!piano;
   $('#micBtn').title=`Play on your own ${piano?'piano':instNoun()}: Musisc listens and guides you`;
   $('#pedalLbl').hidden=!(INST.sound==='piano');
+  updateHandsUI();
   if(typeof setPiano==='function') setPiano(pianoOpen);
   if(!piano) requestAnimationFrame(()=>drawInstView(events[cur]));
   if(typeof renderChordPanel==='function'&&$('#chordsPanel')) renderChordPanel();
@@ -1095,7 +1129,7 @@ function updateChordPlayBtn(){
 }
 // adds the chord backing to the demo's note list: each chord held until the next one (at most two bars)
 function addChordBacking(list, fromMs){
-  if(!chordPlayOn||!chordsShowing()) return;
+  if(!chordPlayOn||!chordsShowing()||handsActive()) return; // one hand only: no chords filling in the other hand
   const off=writtenOffset(), last=events[events.length-1], songEnd=last?last.ms+last.gap:0;
   const tb=chordSoundTb();
   chordLine.forEach((c,i)=>{
@@ -1482,7 +1516,8 @@ function loadAbc(abc){
     }).sort((a,b)=>b.midi-a.midi);
     return {ms:e.milliseconds, gap, els:(e.elements||[]).flat(), pitches, startChars:e.startCharArray||[e.startChar]};
   });
-  applyPart(events);
+  tagClefs(v,events);
+  applyPart(events); updateHandsUI(); dimOtherHand(v);
   closeChordPop(); buildChordLine(v);
   // meta
   const title=(v.metaText&&v.metaText.title)||'Untitled';
@@ -3089,6 +3124,9 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 /* ---------- sidebar and "What's new" ----------
    The changelog: add an entry here with every update (newest first). Tags: new, improved, fixed. */
 const CHANGELOG=[
+  {date:'2026-11-25',items:[
+    ['new','Hands: on piano and keyboard, choose to play both hands, only the treble clef (right hand) or only the bass clef (left hand). The other staff fades and is left out of the demo, the lesson and mic practice.'],
+  ]},
   {date:'2026-11-24',items:[
     ['new','A sidebar: jump to Learn, Find music, Your songs, or Chords and strumming; your instrument and the tuner sit at the bottom. On phones it opens from the ☰ button.'],
     ['new','What\'s new: this list of every update.'],
@@ -3169,6 +3207,7 @@ function wireSidebar(){
 }
 
 wireChordPanel(); wireTuner(); wireSidebar(); buildInstPicker(); applyInstUI();
+$('#handsSel').onchange=e=>{ handMode=e.target.value; try{ localStorage.setItem('smc.hands',handMode); }catch(x){} if(play) pauseDemo(); reloadKeep(); };
 // the More menu closes after a choice or a click anywhere else
 document.addEventListener('click',e=>{ const m=$('#moreMenu'); if(m&&m.open&&(!m.contains(e.target)||e.target.closest('.more-pop .btn'))) setTimeout(()=>m.open=false,0); });
 $('#instSample').onclick=e=>{ const k=e.currentTarget.dataset.k; if(!k) return; try{ loadAbc(SAMPLES[k]); currentSong='s:'+k; fillSongs(); showView('score'); setStatus(''); }catch(err){ setStatus(esc(err.message),'err'); } };

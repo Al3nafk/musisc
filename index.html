@@ -244,6 +244,7 @@ select.btn{padding-right:10px}
 #metroBtn.tick.accent .beat-dot{background:var(--now)}
 #score svg .abcjs-chord{font-weight:600;cursor:help}
 #score.hide-chords svg .abcjs-chord{display:none}
+#score svg .dim-hand{opacity:.3}
 #score svg .abcjs-chord{cursor:pointer}
 .chords-panel{padding:12px 14px 14px;display:grid;gap:12px}
 @media (min-width:980px){.chords-panel{grid-column:1}.lesson-panel{grid-column:2;grid-row:1 / span 2}}
@@ -545,6 +546,9 @@ select.btn{padding-right:10px}
           <button class="btn" id="fromHereBtn" type="button" title="Play from the current note">From here</button>
           <label class="speed" for="speed">Speed <input id="speed" type="range" min="40" max="150" step="5" value="100"><span id="speedOut">100%</span></label>
           <label class="bpm" for="bpmIn" title="Type a tempo in beats per minute, then press Enter">Tempo <input id="bpmIn" type="number" min="20" max="300" step="1" inputmode="numeric" value="100"> BPM</label>
+          <label class="pedal" id="handsLbl" for="handsSel" hidden title="Play and learn both hands, or only one staff">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5v-2a1.5 1.5 0 0 1 3 0V12"/><path d="M14 10.5a1.5 1.5 0 0 1 3 0V12"/><path d="M17 11.5a1.5 1.5 0 0 1 3 0V16a6 6 0 0 1-6 6h-2a6 6 0 0 1-5.2-3L4.3 14.6a1.5 1.5 0 0 1 2.6-1.5L8 15"/></svg> Hands
+            <select id="handsSel"><option value="both">Both</option><option value="treble">Right hand only (treble clef)</option><option value="bass">Left hand only (bass clef)</option></select></label>
           <label class="pedal" id="pedalLbl" for="pedalSel" title="Sustain pedal: notes keep ringing until the pedal changes">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 20h10l2-6H5z"/><path d="M12 14V4"/></svg> Pedal
             <select id="pedalSel"><option value="off">Off</option><option value="bar">On: change each bar</option><option value="half">On: change each half bar</option></select></label>
@@ -693,7 +697,7 @@ select.btn{padding-right:10px}
 
 </div>
 <script src="abcjs-basic-min.js"></script>
-<script src="app.js?v=3a41e2bd01"></script>
+<script src="app.js?v=3cb0288bfd"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
