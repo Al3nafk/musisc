@@ -218,14 +218,28 @@ let ctx=null, master=null, play=null, sampleFn=null, kbRange=[48,84];
 /* ---------- audio ---------- */
 // Recorded grand piano (Fluid R3 GM, every third note; the notes between are pitch-shifted),
 // a soft room reverb, and a gentle limiter. Falls back to a clean additive tone until samples load.
-let pianoBuf={}, pianoState='idle', pedalIn=null;
+let pianoBuf={}, pianoState='idle', pedalIn=null, outGain=null, outTap=null;
+// Volume slider: 100% is the new, louder default; up to 200% for quiet speakers (the limiter stops distortion)
+let volumePct=(()=>{ try{ return +localStorage.getItem('smc.volume')||100; }catch(e){ return 100; } })();
+function volumeGain(){ return 3.5*Math.pow(volumePct/100,1.6); }
+function setVolume(pct){
+  volumePct=Math.max(0,Math.min(200,pct)); try{ localStorage.setItem('smc.volume',String(volumePct)); }catch(e){}
+  if(outGain) outGain.gain.setTargetAtTime(volumeGain(),ctx.currentTime,.03);
+  const s=$('#volIn'); if(s) s.value=String(volumePct); const o=$('#volOut'); if(o) o.textContent=volumePct+'%';
+}
 function audio(){
   if(!ctx){
     ctx=new (window.AudioContext||window.webkitAudioContext)();
+    // loudness: a compressor evens out soft and loud notes, a make-up gain brings the whole thing up
+    // (phone and laptop speakers need it), and a fast limiter at the end keeps it from ever clipping
     const comp=ctx.createDynamicsCompressor();
-    comp.threshold.value=-14; comp.knee.value=12; comp.ratio.value=3; comp.attack.value=.004; comp.release.value=.25;
-    comp.connect(ctx.destination);
-    master=ctx.createGain(); master.gain.value=.85;
+    comp.threshold.value=-22; comp.knee.value=10; comp.ratio.value=4; comp.attack.value=.003; comp.release.value=.22;
+    outGain=ctx.createGain(); outGain.gain.value=volumeGain();
+    const lim=ctx.createDynamicsCompressor();
+    lim.threshold.value=-1.5; lim.knee.value=0; lim.ratio.value=20; lim.attack.value=.001; lim.release.value=.08;
+    outTap=ctx.createAnalyser(); outTap.fftSize=2048;
+    comp.connect(outGain); outGain.connect(lim); lim.connect(ctx.destination); lim.connect(outTap);
+    master=ctx.createGain(); master.gain.value=1;
     const dry=ctx.createGain(); dry.gain.value=.9;
     const wet=ctx.createGain(); wet.gain.value=.16;
     const verb=ctx.createConvolver(); verb.buffer=roomImpulse(1.8);
@@ -3124,6 +3138,9 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
 /* ---------- sidebar and "What's new" ----------
    The changelog: add an entry here with every update (newest first). Tags: new, improved, fixed. */
 const CHANGELOG=[
+  {date:'2026-11-26',items:[
+    ['improved','Louder, clearer sound: a stronger output stage with a limiter so it never distorts, plus a Volume slider that goes up to 200% for quiet phone and laptop speakers.'],
+  ]},
   {date:'2026-11-25',items:[
     ['new','Hands: on piano and keyboard, choose to play both hands, only the treble clef (right hand) or only the bass clef (left hand). The other staff fades and is left out of the demo, the lesson and mic practice.'],
   ]},
@@ -3207,6 +3224,7 @@ function wireSidebar(){
 }
 
 wireChordPanel(); wireTuner(); wireSidebar(); buildInstPicker(); applyInstUI();
+$('#volIn').oninput=e=>setVolume(+e.target.value); setVolume(volumePct);
 $('#handsSel').onchange=e=>{ handMode=e.target.value; try{ localStorage.setItem('smc.hands',handMode); }catch(x){} if(play) pauseDemo(); reloadKeep(); };
 // the More menu closes after a choice or a click anywhere else
 document.addEventListener('click',e=>{ const m=$('#moreMenu'); if(m&&m.open&&(!m.contains(e.target)||e.target.closest('.more-pop .btn'))) setTimeout(()=>m.open=false,0); });
