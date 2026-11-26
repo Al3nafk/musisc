@@ -1341,7 +1341,7 @@ function detectPitch(raw, sr){
   // halve the rate: plenty for pitch, four times less work
   const n=raw.length>>1, x=new Float32Array(n); let rms=0;
   for(let i=0;i<n;i++){ const v=(raw[2*i]+raw[2*i+1])*.5; x[i]=v; rms+=v*v; }
-  rms=Math.sqrt(rms/n); if(rms<0.006) return null;
+  rms=Math.sqrt(rms/n); if(rms<0.0015) return null; // quiet laptop mics still count; the clarity check rejects noise
   const fs=sr/2, minLag=Math.max(2,Math.floor(fs/1400)), maxLag=Math.min(n-64,Math.floor(fs/27));
   const nsdf=new Float32Array(maxLag+1);
   for(let tau=minLag;tau<=maxLag;tau++){ let acf=0, m=0; const lim=n-tau; for(let i=0;i<lim;i++){ const a=x[i], b=x[i+tau]; acf+=a*b; m+=a*a+b*b; } nsdf[tau]=m>0?2*acf/m:0; }
@@ -1396,7 +1396,8 @@ function tunerTick(){
   const r=detectPitch(TUNER.buf,ctx.sampleRate);
   if(!r) TUNER.hist=[];
   tunerShow(r);
-  const lvl=r?Math.min(100,r.rms*900):0; $('#tunLevel').style.width=lvl+'%';
+  let raw=0; for(let i=0;i<TUNER.buf.length;i+=4) raw+=TUNER.buf[i]*TUNER.buf[i]; raw=Math.sqrt(raw/(TUNER.buf.length/4));
+  $('#tunLevel').style.width=Math.min(100,Math.max(0,(20*Math.log10(raw/1e-4+1e-9))*1.6))+'%';
 }
 function renderTunerStrings(){
   const box=$('#tunStrings'), strs=tunerStrings();
@@ -1426,8 +1427,7 @@ async function tunerOpen(){
     }
   }catch(e){
     setAudioSession('playback');
-    const blocked=e&&(e.name==='NotAllowedError'||e.name==='SecurityError');
-    $('#tunTip').innerHTML=blocked?(sampleFn?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to use the tuner.':'Musisc needs permission to use the microphone. Allow it next to the address bar, then open the tuner again.'):'No microphone was found.';
+    $('#tunTip').innerHTML=micErrorText(e,'the tuner');
     return;
   }
   // low instruments need a longer listening window to catch several cycles of a slow wave
@@ -2158,8 +2158,22 @@ async function openMic(id){
   catch(e){
     // the remembered mic was unplugged: fall back to the device's default one
     if(id&&(e.name==='OverconstrainedError'||e.name==='NotFoundError')){ setMicPref(''); delete audio.deviceId; return await navigator.mediaDevices.getUserMedia({audio}); }
+    // some laptop mic drivers refuse the raw settings: try the browser's normal ones
+    if(e.name==='OverconstrainedError'||e.name==='TypeError'||e.name==='NotReadableError'||e.name==='AbortError'){
+      return await navigator.mediaDevices.getUserMedia({audio:id?{deviceId:{exact:id}}:true});
+    }
     throw e;
   }
+}
+// a clear explanation for each way the microphone can fail to start
+function micErrorText(e, what){
+  const n=e&&e.name;
+  if(n==='NotAllowedError'||n==='SecurityError') return sampleFn
+    ?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to use '+what+'.'
+    :'Musisc needs permission to use the microphone. Click the icon next to the address bar and allow the microphone, then try again. On Windows, also check Settings › Privacy &amp; security › Microphone and turn on "Let apps access your microphone" and "Let desktop apps access your microphone". On a Mac: System Settings › Privacy &amp; Security › Microphone.';
+  if(n==='NotReadableError'||n==='AbortError') return 'Your microphone could not be opened. It may be in use by another app (Zoom, Teams, Discord), or switched off by a laptop mic key or a Windows privacy setting. Close the other app and try again.';
+  if(n==='NotFoundError'||n==='OverconstrainedError') return 'No microphone was found. Check that your laptop mic is switched on in its sound settings, or plug one in.';
+  return 'The microphone could not start ('+esc(n||'unknown error')+'). Try reloading the page.';
 }
 async function fillMicList(){
   const sel=$('#micDev'); if(!sel||!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices) return;
@@ -2306,16 +2320,30 @@ function micJudge(fresh, post, targets, binHz, pre){
   return {kind:'wrong', played:w, missing};
 }
 // ----- the listening loop -----
+// a steady timer, not animation frames: laptops slow those down in battery saver or when the window is behind others
 function micLoop(){
-  if(!MIC.on) return;
-  MIC.raf=requestAnimationFrame(micLoop);
-  micStep(ctx.currentTime);
+  clearInterval(MIC.timer);
+  MIC.timer=setInterval(()=>{ if(!MIC.on){ clearInterval(MIC.timer); return; } micStep(ctx.currentTime); micWatch(); },16);
+}
+// if nothing at all comes in for a few seconds, say which mic is in use and how to fix it
+function micWatch(){
+  const w=MIC.watch; if(!w||w.done) return;
+  w.max=Math.max(w.max,micRms());
+  if(ctx.currentTime-w.t0>6){
+    w.done=true;
+    if(w.max<0.0006){
+      const track=MIC.stream&&MIC.stream.getAudioTracks()[0], name=track&&track.label?'"'+esc(track.label)+'"':'your microphone';
+      micSay('Musisc is not hearing anything from '+name+'. Choose another mic in the Mic list above, check it is not muted (some laptops have a mic key), and on Windows check Settings › System › Sound › Input. Then play again.','bad');
+      if($('#micDevLbl')) $('#micDevLbl').hidden=false;
+    }
+  }
 }
 // one analysis step at audio time `now` (also driven by the self-test with a simulated mic)
 function micStep(now){
   const rms=micRms(), raw=micSpectrum();
   // first ~1 s: learn the room (its level and its noise at each frequency)
   if(MIC.calib){
+    const lv=$('#micLevel'); if(lv) lv.style.width=Math.min(100,Math.max(0,(20*Math.log10(rms/1e-4+1e-9))*1.6))+'%';
     const c=MIC.calib; c.rms.push(rms); for(let i=0;i<raw.length;i++) c.spec[i]+=raw[i]; c.n++;
     if(now>=c.until){
       c.rms.sort((a,b)=>a-b); MIC.noise=Math.max(2e-4,c.rms[Math.floor(c.rms.length*0.6)]||2e-4);
@@ -2452,8 +2480,7 @@ async function micStart(from=cur){
     } else MIC.src=MIC.test;
   }catch(e){
     setAudioSession('playback');
-    const blocked=e&&(e.name==='NotAllowedError'||e.name==='SecurityError');
-    setStatus(blocked?(sampleFn?'The microphone is not available inside claude.ai. Open the <a href="https://al3nafk.github.io/musisc/" target="_blank" rel="noopener">GitHub version of Musisc</a> to practice with the mic.':'Musisc needs permission to use the microphone. Allow it in your browser (the icon next to the address), then press Practice with mic again.'):'No microphone was found. Plug one in or use a device with a mic.','err');
+    setStatus(micErrorText(e,'mic practice'),'err');
     return;
   }
   if(!MIC.test){ fillMicList(); keepAwake(true); }
@@ -2461,6 +2488,7 @@ async function micStart(from=cur){
   MIC.td=new Float32Array(MIC.an.fftSize); MIC.fd=new Float32Array(MIC.an.frequencyBinCount); MIC.mag=new Float32Array(MIC.an.frequencyBinCount);
   MIC.src.connect(MIC.an);
   MIC.mode=$('#micMode').value; MIC.on=true; MIC.hist=[]; MIC.rmsHist=[]; MIC.pending=null; MIC.tries=0; MIC.tempo=null;
+  MIC.watch=MIC.test?null:{t0:ctx.currentTime,max:0,done:false};
   const total=events.slice(from).filter(e=>e.pitches.length).length;
   MIC.stats={first:0,done:0,wrong:0,late:0,missed:0,total,badBars:{},from,t0:Date.now()};
   micClearMarks(); $('#micBar').hidden=false; $('#micBtn').classList.add('active'); $('#micBtn').lastChild.textContent=' Stop practice';
@@ -2477,7 +2505,7 @@ async function micStart(from=cur){
 }
 function micStop(quiet){
   if(!MIC.on) return;
-  MIC.on=false; cancelAnimationFrame(MIC.raf);
+  MIC.on=false; clearInterval(MIC.timer); MIC.watch=null;
   try{ MIC.src&&MIC.src.disconnect(); }catch(e){}
   if(MIC.stream) MIC.stream.getTracks().forEach(t=>t.stop());
   MIC.stream=null; MIC.src=null; MIC.tempo=null;
@@ -3139,6 +3167,7 @@ requestAnimationFrame(()=>{ measureKeys(); rollLoop(); });
    The changelog: add an entry here with every update (newest first). Tags: new, improved, fixed. */
 const CHANGELOG=[
   {date:'2026-11-26',items:[
+    ['fixed','Mic practice and the tuner on laptops: steadier listening (also in battery saver or behind other windows), quiet built-in mics now work, and clear messages when the mic is blocked, busy in another app, or not hearing anything.'],
     ['improved','Louder, clearer sound: a stronger output stage with a limiter so it never distorts, plus a Volume slider that goes up to 200% for quiet phone and laptop speakers.'],
   ]},
   {date:'2026-11-25',items:[
